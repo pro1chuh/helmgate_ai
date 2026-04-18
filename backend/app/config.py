@@ -41,11 +41,11 @@ class Settings(BaseSettings):
     # Model mapping — cloud (NVIDIA NIM)
     # -------------------------------------------------------
 
-    # Основная модель — GLM-5.1 (текст, код, документы)
-    CLOUD_MODEL_TEXT: str = "z-ai/glm-5.1"
+    # Основная модель — Llama-3.3-70B (текст, код, документы)
+    CLOUD_MODEL_TEXT: str = "meta/llama-3.3-70b-instruct"
 
-    # Тяжёлый reasoning — DeepSeek V3.2
-    CLOUD_MODEL_REASONING: str = "deepseek-ai/deepseek-v3.2"
+    # Тяжёлый reasoning — GLM-5.1 (thinking-модель)
+    CLOUD_MODEL_REASONING: str = "z-ai/glm-5.1"
 
     # Vision — анализ изображений
     CLOUD_MODEL_VISION: str = "meta/llama-3.2-90b-vision-instruct"
