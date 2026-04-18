@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from typing import Generic, TypeVar
 from datetime import datetime
 from app.database import get_db
 from app.models.chat import Chat, Message, Document
@@ -57,6 +58,16 @@ class SendMessageRequest(BaseModel):
     file_id: int | None = None
     file_mime_type: str | None = None
     manual_model: str | None = None
+
+
+T = TypeVar("T")
+
+class PagedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    limit: int
+    has_more: bool
 
 
 # --- Helpers ---
@@ -114,17 +125,31 @@ def _build_vision_messages(messages: list[dict], image_path: str, mime_type: str
 
 # --- Endpoints ---
 
-@router.get("", response_model=list[ChatOut])
+@router.get("", response_model=PagedResponse[ChatOut])
 async def list_chats(
+    page: int = 1,
+    limit: int = 20,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import func as sqlfunc
+    limit = min(max(limit, 1), 100)
+    offset = (page - 1) * limit
+
+    count_result = await db.execute(
+        select(sqlfunc.count()).select_from(Chat).where(Chat.user_id == current_user.id)
+    )
+    total = count_result.scalar() or 0
+
     result = await db.execute(
         select(Chat)
         .where(Chat.user_id == current_user.id)
         .order_by(Chat.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
-    return result.scalars().all()
+    items = list(result.scalars().all())
+    return PagedResponse(items=items, total=total, page=page, limit=limit, has_more=(offset + len(items)) < total)
 
 
 @router.post("", response_model=ChatOut, status_code=201)
@@ -155,22 +180,38 @@ async def delete_chat(
     await db.commit()
 
 
-@router.get("/{chat_id}/messages", response_model=list[MessageOut])
+@router.get("/{chat_id}/messages", response_model=PagedResponse[MessageOut])
 async def get_messages(
     chat_id: int,
+    page: int = 1,
+    limit: int = 50,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import func as sqlfunc
     result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    result = await db.execute(
-        select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
+    limit = min(max(limit, 1), 200)
+    offset = (page - 1) * limit
+
+    count_result = await db.execute(
+        select(sqlfunc.count()).select_from(Message).where(Message.chat_id == chat_id)
     )
-    return result.scalars().all()
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(Message)
+        .where(Message.chat_id == chat_id)
+        .order_by(Message.created_at)
+        .offset(offset)
+        .limit(limit)
+    )
+    items = list(result.scalars().all())
+    return PagedResponse(items=items, total=total, page=page, limit=limit, has_more=(offset + len(items)) < total)
 
 
 @router.post("/{chat_id}/messages")
