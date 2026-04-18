@@ -27,8 +27,7 @@ router = APIRouter(prefix="/chats", tags=["chats"])
 
 SYSTEM_PROMPT = """Ты — Helm, корпоративный AI-ассистент.
 Отвечай на русском языке, если не попросили иначе.
-Будь конкретным, профессиональным и полезным.
-{facts}"""
+Будь конкретным, профессиональным и полезным."""
 
 
 # --- Schemas ---
@@ -76,18 +75,40 @@ def build_facts_context(facts: list[UserFact]) -> str:
     if not facts:
         return ""
     lines = [f"- {f.key}: {f.value}" for f in facts]
-    return "Что известно о пользователе:\n" + "\n".join(lines)
+    return "\n\nЧто известно о пользователе:\n" + "\n".join(lines)
 
 
-async def build_messages_history(chat_id: int, db: AsyncSession) -> list[dict]:
+def _estimate_tokens(text: str) -> int:
+    """Грубая оценка токенов: 1 токен ~ 4 символа (работает для RU и EN)."""
+    return max(1, len(text) // 4)
+
+
+async def build_messages_history(
+    chat_id: int,
+    db: AsyncSession,
+    max_tokens: int = 6000,  # оставляем запас под system prompt и ответ модели
+) -> list[dict]:
+    """
+    Загружает историю чата с обрезкой по токенам.
+    Берёт последние сообщения (самые свежие важнее) и обрезает старые
+    если суммарный объём превышает max_tokens.
+    """
     result = await db.execute(
         select(Message)
         .where(Message.chat_id == chat_id)
         .order_by(Message.created_at)
-        .limit(50)
+        .limit(100)  # берём с запасом, потом обрезаем по токенам
     )
     messages = result.scalars().all()
-    return [{"role": m.role, "content": m.content} for m in messages]
+    history = [{"role": m.role, "content": m.content} for m in messages]
+
+    # Обрезаем с начала пока укладываемся в лимит
+    total = sum(_estimate_tokens(m["content"]) for m in history)
+    while history and total > max_tokens:
+        removed = history.pop(0)
+        total -= _estimate_tokens(removed["content"])
+
+    return history
 
 
 async def _get_document(file_id: int, user_id: int, db: AsyncSession) -> Document | None:
@@ -290,7 +311,7 @@ async def send_message(
         rag_context = build_rag_context(chunks, body.content)
 
     # System prompt с фактами о пользователе (+ RAG-контекст если есть)
-    system_prompt = SYSTEM_PROMPT.format(facts=facts_context)
+    system_prompt = SYSTEM_PROMPT + facts_context
     if rag_context:
         system_prompt = system_prompt + "\n\n" + rag_context
 
