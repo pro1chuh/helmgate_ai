@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
+    # OpenRouter — агрегатор всех моделей (fallback + ручной выбор)
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+
     # -------------------------------------------------------
     # Model mapping — cloud (NVIDIA NIM)
     # -------------------------------------------------------
@@ -77,7 +81,7 @@ class Settings(BaseSettings):
     # Chroma (RAG)
     CHROMA_PATH: str = "/app/chroma"
 
-    @field_validator("NVIDIA_API_KEY", "GROQ_API_KEY", mode="before")
+    @field_validator("NVIDIA_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", mode="before")
     @classmethod
     def empty_string_allowed(cls, v):
         return v or ""

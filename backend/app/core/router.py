@@ -33,6 +33,7 @@ class Provider(str, Enum):
     NVIDIA = "nvidia"
     GROQ = "groq"
     OLLAMA = "ollama"
+    OPENROUTER = "openrouter"
 
 
 @dataclass
@@ -125,6 +126,14 @@ def _ollama(model: str, task: TaskType, reason: str) -> RouteResult:
     return RouteResult(
         task_type=task, provider=Provider.OLLAMA, model=model,
         base_url=settings.OLLAMA_BASE_URL, api_key=settings.OLLAMA_API_KEY,
+        reason=reason,
+    )
+
+
+def _openrouter(model: str, task: TaskType, reason: str) -> RouteResult:
+    return RouteResult(
+        task_type=task, provider=Provider.OPENROUTER, model=model,
+        base_url=settings.OPENROUTER_BASE_URL, api_key=settings.OPENROUTER_API_KEY,
         reason=reason,
     )
 

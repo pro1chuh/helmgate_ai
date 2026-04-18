@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.core.router import (
     TaskType, RouteResult, Provider,
     IMAGE_MIME_TYPES, AUDIO_MIME_TYPES, DOCUMENT_MIME_TYPES,
-    _nvidia, _groq, _ollama,
+    _nvidia, _groq, _ollama, _openrouter,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,6 +118,8 @@ async def route(
             return _ollama(manual_model, TaskType.TEXT, "manual → ollama")
         if manual_provider == "groq":
             return _groq(manual_model, TaskType.TEXT, "manual → groq")
+        if manual_provider == "openrouter":
+            return _openrouter(manual_model, TaskType.TEXT, "manual → openrouter")
         return _nvidia(manual_model, TaskType.TEXT, "manual → nvidia")
 
     # 2. По типу файла (детерминированно, без AI)
