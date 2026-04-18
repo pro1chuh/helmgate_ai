@@ -41,14 +41,11 @@ class Settings(BaseSettings):
     # Model mapping — cloud (NVIDIA NIM)
     # -------------------------------------------------------
 
-    # Основная модель — GLM-5.1 для большинства корпоративных задач
+    # Основная модель — GLM-5.1 (текст, код, документы)
     CLOUD_MODEL_TEXT: str = "z-ai/glm-5.1"
 
     # Тяжёлый reasoning — DeepSeek V3.2
     CLOUD_MODEL_REASONING: str = "deepseek-ai/deepseek-v3.2"
-
-    # Код
-    CLOUD_MODEL_CODE: str = "qwen/qwen2.5-coder-32b-instruct"
 
     # Vision — анализ изображений
     CLOUD_MODEL_VISION: str = "meta/llama-3.2-90b-vision-instruct"
@@ -66,7 +63,6 @@ class Settings(BaseSettings):
     # Model mapping — local (Ollama)
     # -------------------------------------------------------
     LOCAL_MODEL_TEXT: str = "llama3.2"
-    LOCAL_MODEL_CODE: str = "qwen2.5-coder"
     LOCAL_MODEL_VISION: str = "llava"
     LOCAL_MODEL_ASR: str = "whisper"
     LOCAL_MODEL_EMBEDDING: str = "nomic-embed-text"

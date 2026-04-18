@@ -20,13 +20,12 @@ settings = get_settings()
 
 
 class TaskType(str, Enum):
-    TEXT = "text"
-    REASONING = "reasoning"
-    CODE = "code"
-    VISION = "vision"
-    ASR = "asr"
-    IMAGE_GEN = "image_gen"
-    RAG = "rag"
+    TEXT = "text"           # Текст + код — GLM-5.1
+    REASONING = "reasoning" # Тяжёлый анализ — DeepSeek V3.2
+    VISION = "vision"       # Анализ изображений
+    ASR = "asr"             # Голос → текст
+    IMAGE_GEN = "image_gen" # Генерация изображений
+    RAG = "rag"             # Ответ по документу
 
 
 class Provider(str, Enum):
@@ -188,9 +187,10 @@ def route(
         return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "image gen trigger → fallback glm-5.1")
 
     if any(t in msg for t in CODE_TRIGGERS):
+        # Код → GLM-5.1 (справляется, нет смысла в отдельной модели)
         if is_local:
-            return _ollama(settings.LOCAL_MODEL_CODE, TaskType.CODE, "code trigger → qwen2.5-coder (local)")
-        return _nvidia(settings.CLOUD_MODEL_CODE, TaskType.CODE, "code trigger → qwen2.5-coder-32b")
+            return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "code → glm fallback (local)")
+        return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "code → glm-5.1")
 
     if any(t in msg for t in REASONING_TRIGGERS):
         if is_local:
