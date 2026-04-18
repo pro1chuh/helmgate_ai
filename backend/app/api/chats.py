@@ -49,8 +49,7 @@ class MessageOut(BaseModel):
     model_used: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True, "protected_namespaces": ()}
 
 
 class SendMessageRequest(BaseModel):

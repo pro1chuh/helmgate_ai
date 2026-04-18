@@ -32,5 +32,10 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     from app.models import user, chat  # noqa — ensure models are registered
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from sqlalchemy.exc import ProgrammingError, IntegrityError
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except (ProgrammingError, IntegrityError):
+        # Enum types already exist (e.g. on restart with multiple workers) — safe to ignore
+        pass
