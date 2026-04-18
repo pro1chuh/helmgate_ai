@@ -2,20 +2,26 @@
 Чаты и сообщения — основной функционал продукта.
 Стриминг через Server-Sent Events.
 """
-from fastapi import APIRouter, Depends, HTTPException
+import base64
+import logging
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models.chat import Chat, Message
+from app.models.chat import Chat, Message, Document
 from app.models.user import User, UserFact
 from app.core.auth import get_current_user
 from app.core.ai_router import route
+from app.core.router import TaskType
 from app.services.llm import llm_client
+from app.config import get_settings
 import json
 
+logger = logging.getLogger(__name__)
+settings = get_settings()
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 SYSTEM_PROMPT = """Ты — Helm, корпоративный AI-ассистент.
@@ -68,10 +74,43 @@ async def build_messages_history(chat_id: int, db: AsyncSession) -> list[dict]:
         select(Message)
         .where(Message.chat_id == chat_id)
         .order_by(Message.created_at)
-        .limit(50)  # последние 50 сообщений для контекста
+        .limit(50)
     )
     messages = result.scalars().all()
     return [{"role": m.role, "content": m.content} for m in messages]
+
+
+async def _get_document(file_id: int, user_id: int, db: AsyncSession) -> Document | None:
+    result = await db.execute(
+        select(Document).where(Document.id == file_id, Document.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+def _build_vision_messages(messages: list[dict], image_path: str, mime_type: str) -> list[dict]:
+    """
+    Заменяет последнее user-сообщение на мультимодальный формат (текст + изображение).
+    Совместимо с OpenAI-compatible API (NVIDIA NIM, Ollama).
+    """
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    result = []
+    for i, msg in enumerate(messages):
+        if msg["role"] == "user" and i == len(messages) - 1:
+            result.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": msg["content"]},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64}"},
+                    },
+                ],
+            })
+        else:
+            result.append(msg)
+    return result
 
 
 # --- Endpoints ---
@@ -139,6 +178,7 @@ async def get_messages(
 async def send_message(
     chat_id: int,
     body: SendMessageRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -157,6 +197,19 @@ async def send_message(
         manual_model=body.manual_model,
     )
 
+    # --- ASR: транскрибируем аудио и используем текст как сообщение ---
+    display_content = body.content  # то что будет сохранено в БД
+    if route_result.task_type == TaskType.ASR and body.file_id:
+        doc = await _get_document(body.file_id, current_user.id, db)
+        if doc:
+            try:
+                transcription = await llm_client.transcribe(route_result, doc.path)
+                display_content = f"[Голосовое сообщение]\n\n{transcription}"
+                body = body.model_copy(update={"content": transcription})
+                logger.info(f"ASR transcription done for doc {doc.id}")
+            except Exception as e:
+                logger.error(f"ASR failed: {e}")
+
     # Загружаем факты о пользователе (долгосрочная память)
     facts_result = await db.execute(
         select(UserFact).where(UserFact.user_id == current_user.id)
@@ -168,7 +221,7 @@ async def send_message(
     user_msg = Message(
         chat_id=chat_id,
         role="user",
-        content=body.content,
+        content=display_content,
         file_id=body.file_id,
     )
     db.add(user_msg)
@@ -185,9 +238,9 @@ async def send_message(
     # История сообщений для контекста
     history = await build_messages_history(chat_id, db)
 
-    # RAG: если задача связана с документом — достаём релевантные куски
+    # --- RAG: достаём релевантные куски документа ---
     rag_context = ""
-    if route_result.task_type.value == "rag":
+    if route_result.task_type == TaskType.RAG:
         from app.services.rag import retrieve, build_rag_context
         chunks = await retrieve(
             user_id=current_user.id,
@@ -200,13 +253,25 @@ async def send_message(
     system_prompt = SYSTEM_PROMPT.format(facts=facts_context)
     if rag_context:
         system_prompt = system_prompt + "\n\n" + rag_context
+
     llm_messages = [{"role": "system", "content": system_prompt}] + history
+
+    # --- VISION: добавляем изображение в мультимодальный формат ---
+    if route_result.task_type == TaskType.VISION and body.file_id and body.file_mime_type:
+        doc = await _get_document(body.file_id, current_user.id, db)
+        if doc:
+            try:
+                llm_messages = _build_vision_messages(
+                    llm_messages, doc.path, body.file_mime_type
+                )
+            except Exception as e:
+                logger.error(f"Vision message build failed: {e}")
 
     # Стриминг ответа
     async def generate():
         full_response = []
 
-        # Сначала отправляем мета-информацию (тип задачи и модель)
+        # Мета-информация (тип задачи и модель)
         meta = {
             "type": "meta",
             "task_type": route_result.task_type.value,
@@ -234,6 +299,15 @@ async def send_message(
         db.add(assistant_msg)
         await db.commit()
 
+        # Фоновое извлечение фактов о пользователе
+        background_tasks.add_task(
+            _extract_facts_background,
+            user_id=current_user.id,
+            user_message=body.content,
+            assistant_message=full_content,
+            db_url=settings.DATABASE_URL,
+        )
+
         # Сигнал завершения
         yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_msg.id}, ensure_ascii=False)}\n\n"
 
@@ -245,3 +319,14 @@ async def send_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def _extract_facts_background(
+    user_id: int,
+    user_message: str,
+    assistant_message: str,
+    db_url: str,
+) -> None:
+    """Фоновая задача: извлекает и сохраняет факты о пользователе."""
+    from app.services.memory_extractor import extract_and_save
+    await extract_and_save(user_id, user_message, assistant_message, db_url)
