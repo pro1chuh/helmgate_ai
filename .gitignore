@@ -1,0 +1,16 @@
+.env
+*.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.next/
+dist/
+build/
+*.log
+uploads/
+chroma/
+.DS_Store
