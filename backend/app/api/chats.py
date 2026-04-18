@@ -203,7 +203,7 @@ async def send_message(
 
         # Стримим токены
         async for token in llm_client.stream_chat(
-            model=route_result.model,
+            route=route_result,
             messages=llm_messages,
         ):
             full_response.append(token)
