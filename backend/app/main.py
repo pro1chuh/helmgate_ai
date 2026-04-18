@@ -16,6 +16,9 @@ async def lifespan(app: FastAPI):
     # Создаём папку для загрузок
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     yield
+    # Graceful shutdown — закрываем пул соединений
+    from app.services.llm import llm_client
+    await llm_client.aclose()
 
 
 app = FastAPI(
