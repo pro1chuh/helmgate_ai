@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.chat import Chat, Message
 from app.models.user import User, UserFact
 from app.core.auth import get_current_user
-from app.core.router import route
+from app.core.ai_router import route
 from app.services.llm import llm_client
 import json
 
@@ -150,8 +150,8 @@ async def send_message(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    # Авторутинг
-    route_result = route(
+    # AI-авторутинг
+    route_result = await route(
         message=body.content,
         file_mime_type=body.file_mime_type,
         manual_model=body.manual_model,
