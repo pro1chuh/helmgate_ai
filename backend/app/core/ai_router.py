@@ -56,8 +56,8 @@ async def _classify(message: str) -> TaskType:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(
-                f"{settings.NVIDIA_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {settings.NVIDIA_API_KEY}"},
+                f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
                 json=payload,
             )
             response.raise_for_status()
@@ -81,14 +81,14 @@ async def _classify(message: str) -> TaskType:
 
 
 def _build_cloud_route(task: TaskType) -> RouteResult:
-    """Маппит тип задачи на модель в cloud-режиме."""
+    """Маппит тип задачи на модель в cloud-режиме (OpenRouter)."""
     if task == TaskType.CODE:
-        return _nvidia(settings.CLOUD_MODEL_CODE, TaskType.CODE, "ai_router → qwen2.5-coder-32b")
+        return _openrouter(settings.CLOUD_MODEL_CODE, TaskType.CODE, "ai_router → qwen2.5-coder-32b")
     if task == TaskType.REASONING:
-        return _nvidia(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "ai_router → glm-5.1")
+        return _openrouter(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "ai_router → deepseek-r1")
     if task == TaskType.IMAGE_GEN:
-        return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "ai_router → image_gen fallback llama")
-    return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "ai_router → llama-3.3-70b")
+        return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "ai_router → image_gen fallback llama")
+    return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "ai_router → llama-3.3-70b")
 
 
 def _build_local_route(task: TaskType) -> RouteResult:

@@ -178,38 +178,36 @@ def route(
             reason = f"image ({file_mime_type})"
             if is_local:
                 return _ollama(settings.LOCAL_MODEL_VISION, TaskType.VISION, reason)
-            return _nvidia(settings.CLOUD_MODEL_VISION, TaskType.VISION, reason + " → llama-3.2-90b-vision")
+            return _openrouter(settings.CLOUD_MODEL_VISION, TaskType.VISION, reason + " → llama-3.2-90b-vision")
 
         if file_mime_type in DOCUMENT_MIME_TYPES:
             reason = f"document ({file_mime_type}) → RAG"
             if is_local:
                 return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.RAG, reason)
-            return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.RAG, reason + " → glm-5.1")
+            return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.RAG, reason + " → llama-3.3-70b")
 
     # 3. По триггерам в тексте
     msg = message.lower()
 
     if any(t in msg for t in IMAGE_GEN_TRIGGERS):
-        # Image gen пока недоступна через стандартный NIM endpoint
-        # Роутим в текст с пометкой (добавим позже)
         if is_local:
             return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "image gen → fallback text (local)")
-        return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "image gen trigger → fallback glm-5.1")
+        return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "image gen → fallback llama")
 
     if any(t in msg for t in CODE_TRIGGERS):
         if is_local:
             return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.CODE, "code → ollama (local)")
-        return _nvidia(settings.CLOUD_MODEL_CODE, TaskType.CODE, "code → qwen2.5-coder-32b")
+        return _openrouter(settings.CLOUD_MODEL_CODE, TaskType.CODE, "code → qwen2.5-coder-32b")
 
     if any(t in msg for t in REASONING_TRIGGERS):
         if is_local:
             return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.REASONING, "reasoning trigger → llama (local)")
-        return _nvidia(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "reasoning trigger → deepseek-v3.2")
+        return _openrouter(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "reasoning → deepseek-r1")
 
-    # 4. Дефолт — GLM-5.1
+    # 4. Дефолт
     if is_local:
         return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "default → llama3.2 (local)")
-    return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "default → glm-5.1")
+    return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "default → llama-3.3-70b")
 
 
 def get_embedding_config() -> tuple[str, str, str]:

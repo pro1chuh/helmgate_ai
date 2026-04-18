@@ -3,7 +3,7 @@ RAG-пайплайн для Helm.
 
 Поток:
   1. Загрузка файла → извлечение текста → нарезка на куски
-  2. Векторизация через NVIDIA nv-embedqa-e5-v5
+  2. Векторизация через локальную ONNX-модель (без API)
   3. Хранение в ChromaDB (коллекция per user)
   4. При запросе: векторный поиск → топ-5 кусков → в prompt LLM
 """
@@ -14,8 +14,8 @@ import logging
 from pathlib import Path
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2EmbeddingFunction
 from app.config import get_settings
-from app.services.llm import llm_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -44,11 +44,15 @@ def get_chroma() -> chromadb.ClientAPI:
     return _chroma
 
 
+_embedding_fn = ONNXMiniLM_L6_V2EmbeddingFunction()
+
+
 def _user_collection(user_id: int) -> chromadb.Collection:
     """Отдельная Chroma-коллекция для каждого пользователя."""
     return get_chroma().get_or_create_collection(
         name=f"user_{user_id}",
         metadata={"hnsw:space": "cosine"},
+        embedding_function=_embedding_fn,
     )
 
 
@@ -141,10 +145,7 @@ async def index_document(
     if not chunks:
         return 0
 
-    # Векторизуем через NVIDIA nv-embedqa-e5-v5
-    embeddings = await llm_client.embed(chunks)
-
-    # Сохраняем в Chroma
+    # Сохраняем в Chroma — эмбеддинги считаются локально через ONNX
     collection = _user_collection(user_id)
 
     ids = [f"doc_{document_id}_chunk_{i}" for i in range(len(chunks))]
@@ -162,7 +163,6 @@ async def index_document(
     collection.add(
         ids=ids,
         documents=chunks,
-        embeddings=embeddings,
         metadatas=metadatas,
     )
 
@@ -195,14 +195,12 @@ async def retrieve(
     try:
         collection = _user_collection(user_id)
 
-        # Векторизуем запрос
-        query_embedding = await llm_client.embed([query])
-
         # Фильтр по конкретному документу если указан
         where = {"document_id": document_id} if document_id else None
 
+        # Эмбеддинг запроса считается локально через ONNX
         results = collection.query(
-            query_embeddings=query_embedding,
+            query_texts=[query],
             n_results=min(top_k, collection.count()),
             where=where,
             include=["documents", "metadatas", "distances"],

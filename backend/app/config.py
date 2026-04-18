@@ -42,29 +42,26 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 
     # -------------------------------------------------------
-    # Model mapping — cloud (NVIDIA NIM)
+    # Model mapping — cloud (OpenRouter)
     # -------------------------------------------------------
 
-    # Основная модель — Llama-3.3-70B (текст, документы)
-    CLOUD_MODEL_TEXT: str = "meta/llama-3.3-70b-instruct"
+    # Основная модель — текст, общение, документы
+    CLOUD_MODEL_TEXT: str = "meta-llama/llama-3.3-70b-instruct"
 
-    # Код — Qwen2.5-Coder-32B (лучшая code-модель на NIM)
+    # Код — Qwen2.5-Coder-32B
     CLOUD_MODEL_CODE: str = "qwen/qwen2.5-coder-32b-instruct"
 
-    # Тяжёлый reasoning — GLM-5.1 (thinking-модель)
-    CLOUD_MODEL_REASONING: str = "z-ai/glm-5.1"
+    # Тяжёлый reasoning — DeepSeek R1
+    CLOUD_MODEL_REASONING: str = "deepseek/deepseek-r1"
 
     # Vision — анализ изображений
-    CLOUD_MODEL_VISION: str = "meta/llama-3.2-90b-vision-instruct"
+    CLOUD_MODEL_VISION: str = "meta-llama/llama-3.2-90b-vision-instruct"
 
-    # ASR — через Groq (NVIDIA NIM не поддерживает)
+    # ASR — через Groq (OpenRouter не поддерживает)
     CLOUD_MODEL_ASR: str = "whisper-large-v3-turbo"
 
-    # Embeddings для RAG — мультиязычная
-    CLOUD_MODEL_EMBEDDING: str = "nvidia/nv-embedqa-e5-v5"
-
-    # Safety — фильтрация контента
-    CLOUD_MODEL_SAFETY: str = "meta/llama-guard-4-12b"
+    # Embeddings — локально через ONNX (не нужен API)
+    CLOUD_MODEL_EMBEDDING: str = "local/onnx"
 
     # -------------------------------------------------------
     # Model mapping — local (Ollama)
