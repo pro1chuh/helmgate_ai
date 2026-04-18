@@ -185,8 +185,21 @@ async def send_message(
     # История сообщений для контекста
     history = await build_messages_history(chat_id, db)
 
-    # System prompt с фактами о пользователе
+    # RAG: если задача связана с документом — достаём релевантные куски
+    rag_context = ""
+    if route_result.task_type.value == "rag":
+        from app.services.rag import retrieve, build_rag_context
+        chunks = await retrieve(
+            user_id=current_user.id,
+            query=body.content,
+            document_id=body.file_id,
+        )
+        rag_context = build_rag_context(chunks, body.content)
+
+    # System prompt с фактами о пользователе (+ RAG-контекст если есть)
     system_prompt = SYSTEM_PROMPT.format(facts=facts_context)
+    if rag_context:
+        system_prompt = system_prompt + "\n\n" + rag_context
     llm_messages = [{"role": "system", "content": system_prompt}] + history
 
     # Стриминг ответа
