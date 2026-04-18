@@ -279,16 +279,24 @@ async def send_message(
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
         # Стримим токены
-        async for token in llm_client.stream_chat(
-            route=route_result,
-            messages=llm_messages,
-        ):
-            full_response.append(token)
-            chunk = {"type": "token", "content": token}
-            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        llm_error = None
+        try:
+            async for token in llm_client.stream_chat(
+                route=route_result,
+                messages=llm_messages,
+            ):
+                full_response.append(token)
+                chunk = {"type": "token", "content": token}
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            llm_error = str(e)
+            logger.error(f"LLM streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
 
         # Сохраняем полный ответ ассистента в БД
         full_content = "".join(full_response)
+        if llm_error and not full_content:
+            full_content = f"[Ошибка LLM: {llm_error}]"
         assistant_msg = Message(
             chat_id=chat_id,
             role="assistant",
