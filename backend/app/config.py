@@ -20,8 +20,8 @@ class Settings(BaseSettings):
 
     # -------------------------------------------------------
     # Deployment mode
-    # cloud → NVIDIA NIM + Groq (default)
-    # local → Ollama only (air-gapped, 152-ФЗ compliance)
+    # cloud → NVIDIA NIM + Groq
+    # local → Ollama only (air-gapped, 152-ФЗ)
     # -------------------------------------------------------
     DEPLOYMENT_MODE: Literal["cloud", "local"] = "cloud"
 
@@ -29,35 +29,45 @@ class Settings(BaseSettings):
     # Cloud providers
     # -------------------------------------------------------
 
-    # NVIDIA NIM — LLM, Vision, Image Gen, Embeddings
+    # NVIDIA NIM — LLM, Vision, Embeddings
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
 
-    # Groq — ASR (Whisper), fast LLM fallback
+    # Groq — ASR (Whisper)
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
     # -------------------------------------------------------
-    # Local provider (Ollama)
+    # Model mapping — cloud (NVIDIA NIM)
     # -------------------------------------------------------
-    OLLAMA_BASE_URL: str = "http://ollama:11434/v1"
-    OLLAMA_API_KEY: str = "ollama"  # Ollama не требует ключ, но клиент ждёт поле
 
-    # -------------------------------------------------------
-    # Model mapping — cloud
-    # -------------------------------------------------------
-    CLOUD_MODEL_TEXT: str = "meta/llama-4-scout-17b-16e-instruct"
-    CLOUD_MODEL_VISION: str = "meta/llama-4-scout-17b-16e-instruct"  # нативно мультимодальная
-    CLOUD_MODEL_IMAGE_GEN: str = "black-forest-labs/flux.2-klein-4b"
-    CLOUD_MODEL_ASR: str = "whisper-large-v3-turbo"      # через Groq
+    # Основная модель — GLM-5.1 для большинства корпоративных задач
+    CLOUD_MODEL_TEXT: str = "z-ai/glm-5.1"
+
+    # Тяжёлый reasoning — DeepSeek V3.2
+    CLOUD_MODEL_REASONING: str = "deepseek-ai/deepseek-v3.2"
+
+    # Код
+    CLOUD_MODEL_CODE: str = "qwen/qwen2.5-coder-32b-instruct"
+
+    # Vision — анализ изображений
+    CLOUD_MODEL_VISION: str = "meta/llama-3.2-90b-vision-instruct"
+
+    # ASR — через Groq (NVIDIA NIM не поддерживает)
+    CLOUD_MODEL_ASR: str = "whisper-large-v3-turbo"
+
+    # Embeddings для RAG — мультиязычная
     CLOUD_MODEL_EMBEDDING: str = "nvidia/nv-embedqa-e5-v5"
+
+    # Safety — фильтрация контента
+    CLOUD_MODEL_SAFETY: str = "meta/llama-guard-4-12b"
 
     # -------------------------------------------------------
     # Model mapping — local (Ollama)
     # -------------------------------------------------------
     LOCAL_MODEL_TEXT: str = "llama3.2"
+    LOCAL_MODEL_CODE: str = "qwen2.5-coder"
     LOCAL_MODEL_VISION: str = "llava"
-    LOCAL_MODEL_IMAGE_GEN: str = ""          # image gen локально не поддерживается
     LOCAL_MODEL_ASR: str = "whisper"
     LOCAL_MODEL_EMBEDDING: str = "nomic-embed-text"
 
