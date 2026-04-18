@@ -41,8 +41,11 @@ class Settings(BaseSettings):
     # Model mapping — cloud (NVIDIA NIM)
     # -------------------------------------------------------
 
-    # Основная модель — Llama-3.3-70B (текст, код, документы)
+    # Основная модель — Llama-3.3-70B (текст, документы)
     CLOUD_MODEL_TEXT: str = "meta/llama-3.3-70b-instruct"
+
+    # Код — Qwen2.5-Coder-32B (лучшая code-модель на NIM)
+    CLOUD_MODEL_CODE: str = "qwen/qwen2.5-coder-32b-instruct"
 
     # Тяжёлый reasoning — GLM-5.1 (thinking-модель)
     CLOUD_MODEL_REASONING: str = "z-ai/glm-5.1"

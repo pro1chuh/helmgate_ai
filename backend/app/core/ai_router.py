@@ -28,7 +28,8 @@ ROUTER_PROMPT = """\
 Ты — классификатор задач. Проанализируй сообщение пользователя и верни ТОЛЬКО валидный JSON без пояснений.
 
 Типы задач:
-- "text": обычный вопрос, написание текста, перевод, резюме, код, работа с файлами
+- "text": обычный вопрос, написание текста, перевод, резюме, общение
+- "code": написать код, функцию, скрипт, класс, исправить баг, отладить, рефакторинг, SQL, regex, тесты
 - "reasoning": глубокий анализ, стратегия, сравнение вариантов, прогноз, оценка рисков, бизнес-план
 - "image_gen": нарисовать, сгенерировать или создать изображение/иллюстрацию/логотип
 
@@ -69,6 +70,7 @@ async def _classify(message: str) -> TaskType:
 
             return {
                 "text": TaskType.TEXT,
+                "code": TaskType.CODE,
                 "reasoning": TaskType.REASONING,
                 "image_gen": TaskType.IMAGE_GEN,
             }.get(task_str, TaskType.TEXT)
@@ -80,12 +82,13 @@ async def _classify(message: str) -> TaskType:
 
 def _build_cloud_route(task: TaskType) -> RouteResult:
     """Маппит тип задачи на модель в cloud-режиме."""
+    if task == TaskType.CODE:
+        return _nvidia(settings.CLOUD_MODEL_CODE, TaskType.CODE, "ai_router → qwen2.5-coder-32b")
     if task == TaskType.REASONING:
-        return _nvidia(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "ai_router → deepseek-v3.2")
+        return _nvidia(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "ai_router → glm-5.1")
     if task == TaskType.IMAGE_GEN:
-        # Image gen пока fallback на GLM-5.1 (endpoint не готов)
-        return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "ai_router → image_gen fallback glm-5.1")
-    return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "ai_router → glm-5.1")
+        return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "ai_router → image_gen fallback llama")
+    return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "ai_router → llama-3.3-70b")
 
 
 def _build_local_route(task: TaskType) -> RouteResult:
