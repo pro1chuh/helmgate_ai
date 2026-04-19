@@ -482,9 +482,9 @@ async def get_finances(
         credits = data.get("credits")  # routerai.ru: просто остаток баланса
         return {
             "label": data.get("label"),
-            "usage_usd": None,
-            "limit_usd": None,
-            "balance_usd": round(credits, 4) if credits is not None else None,
+            "usage_rub": None,
+            "limit_rub": None,
+            "balance_rub": round(credits, 4) if credits is not None else None,
             "is_free_tier": data.get("is_free_tier", False),
             "rate_limit": data.get("rate_limit"),
         }
@@ -523,8 +523,7 @@ async def get_finances(
 
     # --- Сводка ---
     clients_with_key = [c for c in client_results if c.get("has_key")]
-    total_usage = sum(c.get("usage_usd") or 0 for c in clients_with_key if not c.get("error"))
-    total_balance = sum(c.get("balance_usd") or 0 for c in clients_with_key if not c.get("error") and c.get("balance_usd") is not None)
+    total_balance = sum(c.get("balance_rub") or 0 for c in clients_with_key if not c.get("error") and c.get("balance_rub") is not None)
 
     return {
         "master": master,
@@ -532,8 +531,7 @@ async def get_finances(
         "summary": {
             "clients_total": len(orgs),
             "clients_with_key": len(clients_with_key),
-            "total_client_usage_usd": round(total_usage, 6),
-            "total_client_balance_usd": round(total_balance, 6),
+            "total_client_balance_rub": round(total_balance, 2),
         },
     }
 

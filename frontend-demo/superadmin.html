@@ -893,9 +893,9 @@ async function loadFinances() {
           ❌ ${esc(m.error)}
         </div>`;
     } else {
-      const balClr = m.balance_usd === null ? 'text-white' : m.balance_usd > 10 ? 'text-green-400' : m.balance_usd > 2 ? 'text-yellow-400' : 'text-red-400';
+      const balClr = m.balance_rub === null ? 'text-white' : m.balance_rub > 1000 ? 'text-green-400' : m.balance_rub > 200 ? 'text-yellow-400' : 'text-red-400';
       document.getElementById('masterCard').innerHTML = `
-        ${finCard('💳 Баланс', m.balance_usd !== null ? '$' + m.balance_usd.toFixed(4) : '—', 'кредитов на счету', balClr)}
+        ${finCard('💳 Баланс', m.balance_rub !== null ? fmt(m.balance_rub) + ' ₽' : '—', 'на счету router.ai', balClr)}
         ${finCard('🔑 Ключ', m.label || 'Основной ключ', m.key_hint || '')}
         ${finCard('🎯 Тариф', m.is_free_tier ? '🆓 Free tier' : '✅ Paid', '')}
         ${finCard('⚡ Rate limit', m.rate_limit ? m.rate_limit.requests + ' req/' + m.rate_limit.interval : '—', 'запросов в интервал')}
@@ -907,7 +907,7 @@ async function loadFinances() {
     document.getElementById('summaryCards').innerHTML = `
       ${finCard('🏢 Клиентов', s.clients_total, 'всего организаций')}
       ${finCard('🔑 С ключом', s.clients_with_key, 'настроен router.ai')}
-      ${finCard('💰 Баланс клиентов', '$' + s.total_client_balance_usd.toFixed(4), 'суммарный остаток')}
+      ${finCard('💰 Баланс клиентов', fmt(s.total_client_balance_rub) + ' ₽', 'суммарный остаток')}
     `;
 
     // — Таблица клиентов —
@@ -936,12 +936,12 @@ async function loadFinances() {
                 <td class="py-3 pr-3 text-red-400 text-xs" colspan="2">❌ ${esc(c.error)}</td>
                 <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
               </tr>`;
-              const balClr = c.balance_usd === null ? 'text-muted' : c.balance_usd > 5 ? 'text-green-400' : c.balance_usd > 1 ? 'text-yellow-400' : 'text-red-400';
+              const balClr = c.balance_rub === null ? 'text-muted' : c.balance_rub > 500 ? 'text-green-400' : c.balance_rub > 100 ? 'text-yellow-400' : 'text-red-400';
               return `<tr>
                 <td class="py-3 pl-4 pr-3 font-medium text-white cursor-pointer hover:text-accent" onclick="openOrgPanel(${c.org_id})">${esc(c.company_name)}</td>
                 <td class="py-3 pr-3">${statusBadge(c.status)}</td>
                 <td class="py-3 pr-3 text-muted text-xs">${c.label ? esc(c.label) : '—'}</td>
-                <td class="py-3 pr-3 text-right font-semibold ${balClr}">${c.balance_usd !== null ? '$' + c.balance_usd.toFixed(4) : '—'}</td>
+                <td class="py-3 pr-3 text-right font-semibold ${balClr}">${c.balance_rub !== null ? fmt(c.balance_rub) + ' ₽' : '—'}</td>
                 <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
               </tr>`;
             }).join('')}
