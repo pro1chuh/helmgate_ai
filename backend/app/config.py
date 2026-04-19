@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     # Тяжёлый reasoning — Gemini 2.5 Pro
     CLOUD_MODEL_REASONING: str = "google/gemini-2.5-pro"
 
-    # Vision — анализ изображений (TODO: найти замену на routerai.ru)
-    CLOUD_MODEL_VISION: str = "meta-llama/llama-3.2-90b-vision-instruct"
+    # Vision — анализ изображений
+    CLOUD_MODEL_VISION: str = "x-ai/grok-4.20"
 
     # Image generation — Gemini 2.5 Flash Image (дефолт)
     # Альтернативы: openai/gpt-5-image-mini
