@@ -59,6 +59,7 @@ class OrgCreate(BaseModel):
     employee_count: int = 0
     notes: str | None = None
     initial_balance: Decimal = Decimal("0")
+    openrouter_api_key: str | None = None
 
 
 class OrgUpdate(BaseModel):
@@ -69,6 +70,7 @@ class OrgUpdate(BaseModel):
     employee_count: int | None = None
     notes: str | None = None
     status: OrgStatus | None = None
+    openrouter_api_key: str | None = None
 
 
 class OrgOut(BaseModel):
@@ -81,6 +83,7 @@ class OrgOut(BaseModel):
     balance: Decimal
     status: OrgStatus
     notes: str | None
+    openrouter_api_key: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -141,10 +144,10 @@ async def superadmin_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Общая статистика по всем клиентам."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    total_orgs = (await db.execute(sqlfunc.count(Organization.id).select())).scalar() or 0
+    total_orgs = (await db.execute(select(sqlfunc.count(Organization.id)))).scalar() or 0
     active_orgs = (await db.execute(
         select(sqlfunc.count()).select_from(Organization).where(Organization.status == OrgStatus.active)
     )).scalar() or 0
@@ -209,6 +212,7 @@ async def create_organization(
         notes=body.notes,
         balance=body.initial_balance,
         status=OrgStatus.active if body.initial_balance > 0 else OrgStatus.trial,
+        openrouter_api_key=body.openrouter_api_key,
     )
     db.add(org)
     await db.flush()  # получаем org.id
@@ -240,7 +244,7 @@ async def get_organization(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     user_count = (await db.execute(
@@ -384,6 +388,109 @@ async def get_usage(
         .limit(limit)
     )
     return result.scalars().all()
+
+
+# ---------------------------------------------------------------------------
+# Router.ai — баланс и расходы из ЛК провайдера
+# ---------------------------------------------------------------------------
+
+@router.get("/organizations/{org_id}/router-stats")
+async def get_router_stats(
+    org_id: int,
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Подтягивает данные о балансе и расходах из ЛК router.ai (OpenRouter)
+    по API-ключу конкретной организации.
+
+    Возвращает:
+      - usage_usd: потрачено кредитов (USD)
+      - limit_usd: лимит кредитов (null = без ограничений)
+      - balance_usd: остаток (limit - usage, или null если лимита нет)
+      - label: название ключа в ЛК провайдера
+      - is_free_tier: бесплатный тариф
+    """
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not org.openrouter_api_key:
+        raise HTTPException(status_code=422, detail="Organization has no router.ai API key configured")
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://openrouter.ai/api/v1/auth/key",
+                headers={"Authorization": f"Bearer {org.openrouter_api_key}"},
+            )
+        if resp.status_code == 401:
+            raise HTTPException(status_code=422, detail="Invalid router.ai API key")
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"router.ai API error: {str(e)[:200]}")
+
+    usage = data.get("usage")       # кредиты потрачено (USD)
+    limit = data.get("limit")       # лимит (None = безлимит)
+    balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+
+    return {
+        "org_id": org_id,
+        "label": data.get("label"),
+        "usage_usd": usage,
+        "limit_usd": limit,
+        "balance_usd": balance,
+        "is_free_tier": data.get("is_free_tier", False),
+        "rate_limit": data.get("rate_limit"),
+    }
+
+
+@router.get("/router-stats")
+async def get_all_router_stats(
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Агрегированные данные по всем организациям с настроенным ключом router.ai.
+    Запросы к провайдеру идут параллельно.
+    """
+    import httpx
+    import asyncio
+
+    result = await db.execute(
+        select(Organization).where(Organization.openrouter_api_key.isnot(None))
+    )
+    orgs = result.scalars().all()
+
+    async def fetch_one(org: Organization):
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/auth/key",
+                    headers={"Authorization": f"Bearer {org.openrouter_api_key}"},
+                )
+            if resp.status_code != 200:
+                return {"org_id": org.id, "company_name": org.company_name, "error": f"HTTP {resp.status_code}"}
+            data = resp.json().get("data", {})
+            usage = data.get("usage")
+            limit = data.get("limit")
+            balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+            return {
+                "org_id": org.id,
+                "company_name": org.company_name,
+                "label": data.get("label"),
+                "usage_usd": usage,
+                "limit_usd": limit,
+                "balance_usd": balance,
+                "is_free_tier": data.get("is_free_tier", False),
+            }
+        except Exception as e:
+            return {"org_id": org.id, "company_name": org.company_name, "error": str(e)[:100]}
+
+    results = await asyncio.gather(*[fetch_one(org) for org in orgs])
+    return {"items": results, "total": len(results)}
 
 
 # ---------------------------------------------------------------------------

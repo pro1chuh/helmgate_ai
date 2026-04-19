@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helm — Superadmin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        bg: '#0d0d14',
+        surface: '#13131e',
+        card: '#1a1a28',
+        border: '#252538',
+        muted: '#6b6b8a',
+        accent: '#6366f1',
+        'accent-hover': '#4f52d4',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #0d0d14; color: #e2e2f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #13131e; } ::-webkit-scrollbar-thumb { background: #252538; border-radius: 3px; }
+  .status-active    { background: #14532d44; color: #4ade80; border: 1px solid #16a34a55; }
+  .status-trial     { background: #78350f44; color: #fbbf24; border: 1px solid #d9770655; }
+  .status-suspended { background: #7f1d1d44; color: #f87171; border: 1px solid #dc262655; }
+  .slide-in { transition: transform .3s cubic-bezier(.4,0,.2,1), opacity .3s; }
+  .slide-in.hidden-panel { transform: translateX(100%); opacity: 0; pointer-events: none; }
+  .modal-overlay { transition: opacity .2s; }
+  input, select, textarea { background: #13131e; border: 1px solid #252538; color: #e2e2f0; border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; transition: border-color .15s; }
+  input:focus, select:focus, textarea:focus { border-color: #6366f1; }
+  input::placeholder, textarea::placeholder { color: #6b6b8a; }
+  .tab-active { border-bottom: 2px solid #6366f1; color: #e2e2f0; }
+  .tab-inactive { color: #6b6b8a; border-bottom: 2px solid transparent; }
+  .toast { animation: slideUp .3s ease, fadeOut .3s ease 2.7s forwards; }
+  @keyframes slideUp { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
+  @keyframes fadeOut { to { opacity:0 } }
+  .btn { padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all .15s; border: none; }
+  .btn-primary { background: #6366f1; color: #fff; } .btn-primary:hover { background: #4f52d4; }
+  .btn-ghost { background: transparent; color: #9999bb; border: 1px solid #252538; } .btn-ghost:hover { background: #1a1a28; color: #e2e2f0; }
+  .btn-danger { background: #7f1d1d55; color: #f87171; border: 1px solid #dc262633; } .btn-danger:hover { background: #7f1d1d99; }
+  .btn-green { background: #14532d55; color: #4ade80; border: 1px solid #16a34a55; } .btn-green:hover { background: #14532d99; }
+  tr:hover td { background: #1e1e2e; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #9999bb; transition: all .15s; }
+  .nav-item:hover { background: #1a1a28; color: #e2e2f0; }
+  .nav-item.active { background: #6366f122; color: #818cf8; }
+  .skeleton { background: linear-gradient(90deg, #1a1a28 25%, #252538 50%, #1a1a28 75%); background-size: 200% 100%; animation: skeleton 1.5s infinite; border-radius: 6px; }
+  @keyframes skeleton { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- LOGIN -->
+<div id="loginPage" class="min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="text-3xl font-bold text-white mb-1">⛵ Helm</div>
+      <div class="text-muted text-sm">Superadmin Panel</div>
+    </div>
+    <div class="bg-card rounded-2xl p-8 border border-border">
+      <div class="mb-4">
+        <label class="text-sm text-muted mb-1 block">Email</label>
+        <input id="loginEmail" type="email" placeholder="admin@helm.ai" />
+      </div>
+      <div class="mb-6">
+        <label class="text-sm text-muted mb-1 block">Пароль</label>
+        <input id="loginPassword" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()" />
+      </div>
+      <button class="btn btn-primary w-full text-center justify-center" onclick="login()">Войти</button>
+      <div id="loginError" class="text-red-400 text-sm mt-3 text-center hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden flex min-h-screen">
+  <!-- SIDEBAR -->
+  <aside class="w-56 bg-surface border-r border-border flex flex-col flex-shrink-0">
+    <div class="p-5 border-b border-border">
+      <div class="text-lg font-bold text-white">⛵ Helm</div>
+      <div class="text-xs text-muted mt-0.5">Superadmin</div>
+    </div>
+    <nav class="p-3 flex-1 space-y-1">
+      <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
+        <span>📊</span> Дашборд
+      </div>
+      <div class="nav-item" onclick="showPage('organizations')" id="nav-organizations">
+        <span>🏢</span> Организации
+      </div>
+      <div class="nav-item" onclick="showPage('audit')" id="nav-audit">
+        <span>📋</span> Audit Log
+      </div>
+    </nav>
+    <div class="p-3 border-t border-border">
+      <div id="sidebarUser" class="text-xs text-muted mb-2 px-2"></div>
+      <div class="nav-item" onclick="logout()"><span>🚪</span> Выйти</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 overflow-auto">
+
+    <!-- DASHBOARD -->
+    <div id="pageDashboard" class="p-6 max-w-6xl">
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-white">Дашборд</h1>
+        <button class="btn btn-ghost text-sm" onclick="loadDashboard()">↻ Обновить</button>
+      </div>
+
+      <!-- Stats -->
+      <div id="statsCards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+      </div>
+      <div id="statsCards2" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+        <div class="skeleton h-24 rounded-xl"></div>
+      </div>
+
+      <!-- Recent orgs -->
+      <div class="bg-card rounded-xl border border-border">
+        <div class="flex items-center justify-between p-4 border-b border-border">
+          <div class="font-semibold text-white">Последние организации</div>
+          <button class="btn btn-primary text-sm" onclick="showPage('organizations')">Все →</button>
+        </div>
+        <div id="dashOrgTable" class="overflow-x-auto">
+          <div class="p-8 text-center text-muted text-sm">Загрузка...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORGANIZATIONS -->
+    <div id="pageOrganizations" class="hidden p-6 max-w-6xl">
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-white">Организации</h1>
+        <button class="btn btn-primary" onclick="openCreateOrg()">+ Добавить</button>
+      </div>
+      <div class="flex gap-3 mb-4">
+        <input id="orgSearch" type="text" placeholder="Поиск по названию..." class="max-w-xs" oninput="filterOrgs()" />
+        <select id="orgStatusFilter" class="max-w-[160px]" onchange="filterOrgs()">
+          <option value="">Все статусы</option>
+          <option value="active">Активные</option>
+          <option value="trial">Пробный</option>
+          <option value="suspended">Приостановлены</option>
+        </select>
+      </div>
+      <div class="bg-card rounded-xl border border-border overflow-hidden">
+        <div id="orgTable" class="overflow-x-auto">
+          <div class="p-8 text-center text-muted text-sm">Загрузка...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT -->
+    <div id="pageAudit" class="hidden p-6 max-w-5xl">
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-white">Audit Log</h1>
+        <button class="btn btn-ghost text-sm" onclick="loadAudit()">↻ Обновить</button>
+      </div>
+      <div class="bg-card rounded-xl border border-border overflow-hidden">
+        <div id="auditTable">
+          <div class="p-8 text-center text-muted text-sm">Загрузка...</div>
+        </div>
+      </div>
+      <div class="flex justify-center mt-4 gap-2" id="auditPager"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ORG DETAIL SLIDE-IN -->
+<div id="orgPanel" class="slide-in hidden-panel fixed top-0 right-0 h-full w-full max-w-2xl bg-surface border-l border-border z-40 flex flex-col shadow-2xl">
+  <div class="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
+    <div>
+      <div id="panelOrgName" class="text-lg font-bold text-white"></div>
+      <div id="panelOrgMeta" class="text-xs text-muted mt-0.5"></div>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-green text-sm" onclick="openTopUp()">💰 Пополнить</button>
+      <button class="btn btn-ghost text-sm" onclick="closeOrgPanel()">✕</button>
+    </div>
+  </div>
+  <!-- Tabs -->
+  <div class="flex border-b border-border flex-shrink-0 px-5">
+    <button class="tab-active py-3 px-4 text-sm font-medium mr-1" onclick="switchTab('info')" id="tab-info">Инфо</button>
+    <button class="tab-inactive py-3 px-4 text-sm font-medium mr-1" onclick="switchTab('users')" id="tab-users">Сотрудники</button>
+    <button class="tab-inactive py-3 px-4 text-sm font-medium mr-1" onclick="switchTab('topups')" id="tab-topups">Пополнения</button>
+    <button class="tab-inactive py-3 px-4 text-sm font-medium mr-1" onclick="switchTab('usage')" id="tab-usage">Запросы</button>
+    <button class="tab-inactive py-3 px-4 text-sm font-medium" onclick="switchTab('router')" id="tab-router">🔑 Router.ai</button>
+  </div>
+  <div class="flex-1 overflow-y-auto p-5">
+    <!-- Info tab -->
+    <div id="tabInfo">
+      <div id="orgInfoContent"></div>
+    </div>
+    <!-- Users tab -->
+    <div id="tabUsers" class="hidden">
+      <div class="flex justify-between items-center mb-4">
+        <div class="text-sm text-muted">Сотрудники организации</div>
+        <button class="btn btn-primary text-sm" onclick="openInvite()">+ Пригласить</button>
+      </div>
+      <div id="usersContent"></div>
+    </div>
+    <!-- TopUps tab -->
+    <div id="tabTopups" class="hidden">
+      <div id="topupsContent"></div>
+    </div>
+    <!-- Usage tab -->
+    <div id="tabUsage" class="hidden">
+      <div id="usageContent"></div>
+    </div>
+    <!-- Router.ai tab -->
+    <div id="tabRouter" class="hidden">
+      <div id="routerContent"><div class="text-muted text-sm">Загрузка...</div></div>
+    </div>
+  </div>
+</div>
+<div id="panelOverlay" class="hidden fixed inset-0 bg-black/40 z-30" onclick="closeOrgPanel()"></div>
+
+<!-- MODALS -->
+<div id="modalOverlay" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
+  <div class="bg-card rounded-2xl border border-border w-full max-w-md shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between p-5 border-b border-border">
+      <div id="modalTitle" class="font-semibold text-white text-lg"></div>
+      <button class="text-muted hover:text-white" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalBody" class="p-5"></div>
+    <div class="flex gap-3 p-5 pt-0 justify-end" id="modalFooter"></div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div id="toasts" class="fixed bottom-5 right-5 z-[100] flex flex-col gap-2"></div>
+
+<script>
+const API = 'http://localhost:8000/api';
+let token = localStorage.getItem('helm_sa_token') || '';
+let allOrgs = [];
+let currentOrgId = null;
+let auditPage = 1;
+
+// ─── AUTH ───────────────────────────────────────────────────────────────────
+
+async function login() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPassword').value;
+  const err   = document.getElementById('loginError');
+  err.classList.add('hidden');
+  try {
+    const r = await fetch(`${API}/auth/login`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pass})
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.detail || 'Ошибка входа'; err.classList.remove('hidden'); return; }
+    token = d.access_token;
+    localStorage.setItem('helm_sa_token', token);
+    initApp();
+  } catch(e) { err.textContent = 'Нет связи с сервером'; err.classList.remove('hidden'); }
+}
+
+function logout() {
+  token = ''; localStorage.removeItem('helm_sa_token');
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('loginPage').classList.remove('hidden');
+}
+
+async function api(path, opts={}) {
+  const r = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers||{}) }
+  });
+  if (r.status === 401) { logout(); return null; }
+  const d = r.status === 204 ? null : await r.json();
+  if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
+  return d;
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
+async function initApp() {
+  if (!token) return;
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('app').classList.add('flex');
+
+  // Verify superadmin
+  try {
+    const me = await api('/profile');
+    if (!me || me.role !== 'superadmin') { toast('Нет доступа: требуется роль superadmin', 'error'); logout(); return; }
+    document.getElementById('sidebarUser').textContent = me.email;
+  } catch(e) { logout(); return; }
+
+  showPage('dashboard');
+}
+
+// ─── NAVIGATION ─────────────────────────────────────────────────────────────
+
+function showPage(name) {
+  ['dashboard','organizations','audit'].forEach(p => {
+    document.getElementById(`page${p.charAt(0).toUpperCase()+p.slice(1)}`).classList.add('hidden');
+    document.getElementById(`nav-${p}`).classList.remove('active');
+  });
+  document.getElementById(`page${name.charAt(0).toUpperCase()+name.slice(1)}`).classList.remove('hidden');
+  document.getElementById(`nav-${name}`).classList.add('active');
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'organizations') loadOrgs();
+  if (name === 'audit') loadAudit();
+}
+
+// ─── DASHBOARD ───────────────────────────────────────────────────────────────
+
+async function loadDashboard() {
+  try {
+    const stats = await api('/superadmin/stats');
+    if (!stats) return;
+
+    document.getElementById('statsCards').innerHTML = `
+      ${statCard('🏢 Организации', stats.organizations.total, 'всего')}
+      ${statCard('✅ Активные', stats.organizations.active, 'работают')}
+      ${statCard('🔴 Приостановлены', stats.organizations.suspended, 'нет баланса')}
+      ${statCard('💰 Общий баланс', fmt(stats.balance_total_rub) + ' ₽', 'на счетах')}
+    `;
+    document.getElementById('statsCards2').innerHTML = `
+      ${statCard('📨 Запросов', stats.this_month.requests, 'в этом месяце')}
+      ${statCard('💵 Выручка', fmt(stats.this_month.revenue_rub) + ' ₽', 'пополнений')}
+      ${statCard('⚙️ LLM-расходы', fmt(stats.this_month.llm_cost_rub) + ' ₽', 'себестоимость')}
+      ${statCard('📈 Маржа', fmt(stats.this_month.margin_rub) + ' ₽', 'прибыль')}
+    `;
+
+    const orgs = await api('/superadmin/organizations');
+    if (!orgs) return;
+    allOrgs = orgs;
+    document.getElementById('dashOrgTable').innerHTML = orgTableHtml(orgs.slice(0, 5), true);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function statCard(label, value, sub) {
+  return `<div class="bg-card border border-border rounded-xl p-4">
+    <div class="text-xs text-muted mb-2">${label}</div>
+    <div class="text-2xl font-bold text-white">${value}</div>
+    <div class="text-xs text-muted mt-1">${sub}</div>
+  </div>`;
+}
+
+// ─── ORGANIZATIONS ────────────────────────────────────────────────────────────
+
+async function loadOrgs() {
+  document.getElementById('orgTable').innerHTML = '<div class="p-8 text-center text-muted text-sm">Загрузка...</div>';
+  try {
+    const orgs = await api('/superadmin/organizations');
+    if (!orgs) return;
+    allOrgs = orgs;
+    renderOrgTable(orgs);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function filterOrgs() {
+  const q = document.getElementById('orgSearch').value.toLowerCase();
+  const s = document.getElementById('orgStatusFilter').value;
+  const filtered = allOrgs.filter(o =>
+    (!q || o.company_name.toLowerCase().includes(q) || o.director_name.toLowerCase().includes(q)) &&
+    (!s || o.status === s)
+  );
+  renderOrgTable(filtered);
+}
+
+function renderOrgTable(orgs) {
+  document.getElementById('orgTable').innerHTML = orgTableHtml(orgs, false);
+}
+
+function orgTableHtml(orgs, mini) {
+  if (!orgs.length) return '<div class="p-8 text-center text-muted text-sm">Нет организаций</div>';
+  return `<table class="w-full text-sm">
+    <thead><tr class="border-b border-border text-left">
+      <th class="px-4 py-3 text-muted font-medium">Компания</th>
+      <th class="px-4 py-3 text-muted font-medium">Директор</th>
+      <th class="px-4 py-3 text-muted font-medium">Баланс</th>
+      <th class="px-4 py-3 text-muted font-medium">Статус</th>
+      ${!mini ? '<th class="px-4 py-3 text-muted font-medium">Создана</th>' : ''}
+      <th class="px-4 py-3"></th>
+    </tr></thead>
+    <tbody>
+      ${orgs.map(o => `<tr class="border-b border-border cursor-pointer" onclick="openOrgPanel(${o.id})">
+        <td class="px-4 py-3 font-medium text-white">${esc(o.company_name)}</td>
+        <td class="px-4 py-3 text-muted">${esc(o.director_name)}</td>
+        <td class="px-4 py-3 font-mono">${fmt(o.balance)} ₽</td>
+        <td class="px-4 py-3"><span class="status-${o.status} text-xs px-2 py-1 rounded-full">${statusLabel(o.status)}</span></td>
+        ${!mini ? `<td class="px-4 py-3 text-muted">${fmtDate(o.created_at)}</td>` : ''}
+        <td class="px-4 py-3 text-right"><span class="text-muted hover:text-white" onclick="event.stopPropagation();openOrgPanel(${o.id})">→</span></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+// ─── ORG PANEL ───────────────────────────────────────────────────────────────
+
+async function openOrgPanel(id) {
+  currentOrgId = id;
+  document.getElementById('orgPanel').classList.remove('hidden-panel');
+  document.getElementById('panelOverlay').classList.remove('hidden');
+  document.getElementById('panelOrgName').textContent = '...';
+  document.getElementById('panelOrgMeta').textContent = '';
+  switchTab('info');
+  await loadOrgInfo();
+}
+
+function closeOrgPanel() {
+  document.getElementById('orgPanel').classList.add('hidden-panel');
+  document.getElementById('panelOverlay').classList.add('hidden');
+  currentOrgId = null;
+}
+
+async function loadOrgInfo() {
+  try {
+    const o = await api(`/superadmin/organizations/${currentOrgId}`);
+    if (!o) return;
+    document.getElementById('panelOrgName').textContent = o.company_name;
+    document.getElementById('panelOrgMeta').textContent = `ID: ${o.id} · Создана ${fmtDate(o.created_at)}`;
+
+    document.getElementById('orgInfoContent').innerHTML = `
+      <div class="grid grid-cols-2 gap-3 mb-5">
+        ${infoCard('Директор', o.director_name)}
+        ${infoCard('Email', o.email || '—')}
+        ${infoCard('Телефон', o.phone || '—')}
+        ${infoCard('Сотрудников', o.employee_count)}
+      </div>
+      <div class="grid grid-cols-3 gap-3 mb-5">
+        <div class="bg-bg rounded-xl p-4 col-span-1">
+          <div class="text-xs text-muted mb-1">Баланс</div>
+          <div class="text-xl font-bold ${o.balance < 50 ? 'text-red-400' : 'text-green-400'}">${fmt(o.balance)} ₽</div>
+        </div>
+        <div class="bg-bg rounded-xl p-4">
+          <div class="text-xs text-muted mb-1">Статус</div>
+          <div><span class="status-${o.status} text-xs px-2 py-1 rounded-full">${statusLabel(o.status)}</span></div>
+        </div>
+        <div class="bg-bg rounded-xl p-4">
+          <div class="text-xs text-muted mb-1">Запросов / мес</div>
+          <div class="text-xl font-bold text-white">${o.requests_this_month}</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-3 mb-5">
+        <div class="bg-bg rounded-xl p-4">
+          <div class="text-xs text-muted mb-1">Расходы / мес</div>
+          <div class="text-base font-semibold text-white">${fmt(o.cost_this_month)} ₽</div>
+        </div>
+        <div class="bg-bg rounded-xl p-4">
+          <div class="text-xs text-muted mb-1">Всего потрачено</div>
+          <div class="text-base font-semibold text-white">${fmt(o.total_spent)} ₽</div>
+        </div>
+        <div class="bg-bg rounded-xl p-4">
+          <div class="text-xs text-muted mb-1">Пользователей</div>
+          <div class="text-xl font-bold text-white">${o.user_count}</div>
+        </div>
+      </div>
+      ${o.notes ? `<div class="bg-bg rounded-xl p-4 mb-5"><div class="text-xs text-muted mb-1">Заметки</div><div class="text-sm">${esc(o.notes)}</div></div>` : ''}
+      <div class="flex gap-2 flex-wrap">
+        <button class="btn btn-ghost text-sm" onclick="openEditOrg(${o.id})">✏️ Редактировать</button>
+        <button class="btn btn-danger text-sm" onclick="confirmDeleteOrg(${o.id}, '${esc(o.company_name)}')">🗑 Удалить</button>
+      </div>
+    `;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function loadOrgUsers() {
+  document.getElementById('usersContent').innerHTML = '<div class="text-muted text-sm py-4">Загрузка...</div>';
+  try {
+    const users = await api(`/superadmin/organizations/${currentOrgId}/users`);
+    if (!users) return;
+    if (!users.length) { document.getElementById('usersContent').innerHTML = '<div class="text-muted text-sm py-4">Нет сотрудников</div>'; return; }
+    document.getElementById('usersContent').innerHTML = `
+      <div class="space-y-2">
+        ${users.map(u => `<div class="bg-bg rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <div class="font-medium text-sm">${esc(u.name)}</div>
+            <div class="text-xs text-muted">${esc(u.email)}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs px-2 py-0.5 rounded ${u.role==='admin'?'bg-indigo-900 text-indigo-300':'bg-gray-800 text-gray-400'}">${u.role}</span>
+            <span class="text-xs ${u.is_active?'text-green-400':'text-red-400'}">${u.is_active?'●':'○'}</span>
+          </div>
+        </div>`).join('')}
+      </div>`;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function loadOrgTopups() {
+  document.getElementById('topupsContent').innerHTML = '<div class="text-muted text-sm py-4">Загрузка...</div>';
+  try {
+    const tops = await api(`/superadmin/organizations/${currentOrgId}/topups`);
+    if (!tops) return;
+    if (!tops.length) { document.getElementById('topupsContent').innerHTML = '<div class="text-muted text-sm py-4">Нет пополнений</div>'; return; }
+    document.getElementById('topupsContent').innerHTML = `
+      <div class="space-y-2">
+        ${tops.map(t => `<div class="bg-bg rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <div class="font-medium text-sm text-green-400">+${fmt(t.amount)} ₽</div>
+            <div class="text-xs text-muted">${t.comment || '—'}</div>
+          </div>
+          <div class="text-xs text-muted">${fmtDate(t.created_at)}</div>
+        </div>`).join('')}
+      </div>`;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function loadOrgUsage() {
+  document.getElementById('usageContent').innerHTML = '<div class="text-muted text-sm py-4">Загрузка...</div>';
+  try {
+    const usage = await api(`/superadmin/organizations/${currentOrgId}/usage?limit=50`);
+    if (!usage) return;
+    if (!usage.length) { document.getElementById('usageContent').innerHTML = '<div class="text-muted text-sm py-4">Нет запросов</div>'; return; }
+    document.getElementById('usageContent').innerHTML = `
+      <table class="w-full text-xs">
+        <thead><tr class="border-b border-border text-left">
+          <th class="py-2 pr-3 text-muted">Модель</th>
+          <th class="py-2 pr-3 text-muted">Тип</th>
+          <th class="py-2 pr-3 text-muted">Токены</th>
+          <th class="py-2 pr-3 text-muted">Стоимость</th>
+          <th class="py-2 text-muted">Время</th>
+        </tr></thead>
+        <tbody>
+          ${usage.map(u => `<tr class="border-b border-border">
+            <td class="py-2 pr-3 font-mono text-xs text-muted">${shortModel(u.model)}</td>
+            <td class="py-2 pr-3">${u.task_type}</td>
+            <td class="py-2 pr-3">${u.input_tokens}↑ ${u.output_tokens}↓</td>
+            <td class="py-2 pr-3 text-red-400">${fmt(u.cost_rub)} ₽</td>
+            <td class="py-2 text-muted">${fmtDate(u.created_at)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function switchTab(name) {
+  ['info','users','topups','usage','router'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.add('hidden');
+    document.getElementById(`tab-${t}`).className = 'tab-inactive py-3 px-4 text-sm font-medium mr-1';
+  });
+  document.getElementById(`tab${name.charAt(0).toUpperCase()+name.slice(1)}`).classList.remove('hidden');
+  document.getElementById(`tab-${name}`).className = 'tab-active py-3 px-4 text-sm font-medium mr-1';
+  if (name === 'users') loadOrgUsers();
+  if (name === 'topups') loadOrgTopups();
+  if (name === 'usage') loadOrgUsage();
+  if (name === 'router') loadRouterStats();
+}
+
+async function loadRouterStats() {
+  const el = document.getElementById('routerContent');
+  el.innerHTML = '<div class="text-muted text-sm">Загружаю данные с router.ai...</div>';
+  try {
+    const d = await api(`/superadmin/organizations/${currentOrgId}/router-stats`);
+    if (!d) return;
+    const balanceColor = d.balance_usd === null ? 'text-muted' : d.balance_usd > 5 ? 'text-green-400' : 'text-red-400';
+    el.innerHTML = `
+      <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-surface rounded-xl p-4 border border-border">
+            <div class="text-xs text-muted mb-1">Потрачено (USD)</div>
+            <div class="text-2xl font-bold text-white">$${d.usage_usd !== null ? d.usage_usd.toFixed(4) : '—'}</div>
+          </div>
+          <div class="bg-surface rounded-xl p-4 border border-border">
+            <div class="text-xs text-muted mb-1">Остаток (USD)</div>
+            <div class="text-2xl font-bold ${balanceColor}">${d.balance_usd !== null ? '$' + d.balance_usd.toFixed(4) : d.limit_usd === null ? '∞ безлимит' : '—'}</div>
+          </div>
+          <div class="bg-surface rounded-xl p-4 border border-border">
+            <div class="text-xs text-muted mb-1">Лимит (USD)</div>
+            <div class="text-xl font-semibold text-white">${d.limit_usd !== null ? '$' + d.limit_usd : 'Без лимита'}</div>
+          </div>
+          <div class="bg-surface rounded-xl p-4 border border-border">
+            <div class="text-xs text-muted mb-1">Тариф</div>
+            <div class="text-xl font-semibold ${d.is_free_tier ? 'text-yellow-400' : 'text-green-400'}">${d.is_free_tier ? '🆓 Free tier' : '✅ Платный'}</div>
+          </div>
+        </div>
+        ${d.label ? `<div class="text-xs text-muted">Название ключа: <span class="text-white">${esc(d.label)}</span></div>` : ''}
+        ${d.rate_limit ? `<div class="text-xs text-muted">Rate limit: <span class="text-white">${d.rate_limit.requests} req / ${d.rate_limit.interval}</span></div>` : ''}
+        <button class="btn btn-ghost text-sm" onclick="loadRouterStats()">↻ Обновить</button>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="text-red-400 text-sm p-4 bg-red-900/20 rounded-xl border border-red-900/40">
+      ${e.message.includes('no router.ai') ? '⚠️ API-ключ router.ai не настроен. Добавьте его через кнопку «Редактировать».' : '❌ ' + esc(e.message)}
+    </div>`;
+  }
+}
+
+// ─── MODALS ───────────────────────────────────────────────────────────────────
+
+function openModal(title, bodyHtml, buttons) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modalFooter').innerHTML = buttons;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+
+function openCreateOrg() {
+  openModal('Новая организация', `
+    <div class="space-y-3">
+      <div><label class="text-xs text-muted block mb-1">Название компании *</label><input id="f_cname" placeholder="ООО Ромашка" /></div>
+      <div><label class="text-xs text-muted block mb-1">Директор / контакт *</label><input id="f_dname" placeholder="Иванов Иван Иванович" /></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-muted block mb-1">Email</label><input id="f_email" type="email" placeholder="ceo@company.ru" /></div>
+        <div><label class="text-xs text-muted block mb-1">Телефон</label><input id="f_phone" placeholder="+7 999 000 00 00" /></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-muted block mb-1">Сотрудников</label><input id="f_emp" type="number" placeholder="50" /></div>
+        <div><label class="text-xs text-muted block mb-1">Начальный баланс ₽</label><input id="f_bal" type="number" placeholder="0" /></div>
+      </div>
+      <div><label class="text-xs text-muted block mb-1">Заметки</label><textarea id="f_notes" rows="2" placeholder="Договор №..."></textarea></div>
+      <div><label class="text-xs text-muted block mb-1">Ключ router.ai (OpenRouter)</label><input id="f_rkey" placeholder="sk-or-..." /></div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+     <button class="btn btn-primary" onclick="createOrg()">Создать</button>`
+  );
+}
+
+async function createOrg() {
+  const body = {
+    company_name: v('f_cname'), director_name: v('f_dname'),
+    email: v('f_email') || null, phone: v('f_phone') || null,
+    employee_count: parseInt(v('f_emp')) || 0,
+    initial_balance: parseFloat(v('f_bal')) || 0,
+    notes: v('f_notes') || null,
+    openrouter_api_key: v('f_rkey') || null,
+  };
+  if (!body.company_name || !body.director_name) { toast('Заполните обязательные поля', 'error'); return; }
+  try {
+    await api('/superadmin/organizations', { method:'POST', body: JSON.stringify(body) });
+    closeModal(); toast('Организация создана'); loadOrgs();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function openEditOrg(id) {
+  const org = allOrgs.find(o => o.id === id);
+  if (!org) return;
+  openModal('Редактировать организацию', `
+    <div class="space-y-3">
+      <div><label class="text-xs text-muted block mb-1">Название *</label><input id="e_cname" value="${esc(org.company_name)}" /></div>
+      <div><label class="text-xs text-muted block mb-1">Директор *</label><input id="e_dname" value="${esc(org.director_name)}" /></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-muted block mb-1">Email</label><input id="e_email" value="${esc(org.email||'')}" /></div>
+        <div><label class="text-xs text-muted block mb-1">Телефон</label><input id="e_phone" value="${esc(org.phone||'')}" /></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-muted block mb-1">Сотрудников</label><input id="e_emp" type="number" value="${org.employee_count}" /></div>
+        <div><label class="text-xs text-muted block mb-1">Статус</label>
+          <select id="e_status">
+            <option value="active" ${org.status==='active'?'selected':''}>Активна</option>
+            <option value="trial" ${org.status==='trial'?'selected':''}>Пробный</option>
+            <option value="suspended" ${org.status==='suspended'?'selected':''}>Приостановлена</option>
+          </select>
+        </div>
+      </div>
+      <div><label class="text-xs text-muted block mb-1">Заметки</label><textarea id="e_notes" rows="2">${esc(org.notes||'')}</textarea></div>
+      <div><label class="text-xs text-muted block mb-1">Ключ router.ai (OpenRouter)</label><input id="e_rkey" value="${esc(org.openrouter_api_key||'')}" placeholder="sk-or-..." /></div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+     <button class="btn btn-primary" onclick="updateOrg(${id})">Сохранить</button>`
+  );
+}
+
+async function updateOrg(id) {
+  const body = {
+    company_name: v('e_cname'), director_name: v('e_dname'),
+    email: v('e_email') || null, phone: v('e_phone') || null,
+    employee_count: parseInt(v('e_emp')) || 0,
+    status: v('e_status'), notes: v('e_notes') || null,
+    openrouter_api_key: v('e_rkey') || null,
+  };
+  try {
+    await api(`/superadmin/organizations/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+    closeModal(); toast('Сохранено');
+    await loadOrgs();
+    if (currentOrgId === id) loadOrgInfo();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function openTopUp() {
+  openModal('Пополнить баланс', `
+    <div class="space-y-3">
+      <div><label class="text-xs text-muted block mb-1">Сумма (₽) *</label><input id="t_amount" type="number" min="1" placeholder="1000" /></div>
+      <div><label class="text-xs text-muted block mb-1">Комментарий</label><input id="t_comment" placeholder="Счёт №123 от 01.01.2026" /></div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+     <button class="btn btn-green" onclick="doTopUp()">💰 Пополнить</button>`
+  );
+}
+
+async function doTopUp() {
+  const amount = parseFloat(v('t_amount'));
+  if (!amount || amount <= 0) { toast('Введите корректную сумму', 'error'); return; }
+  try {
+    await api(`/superadmin/organizations/${currentOrgId}/topup`, {
+      method: 'POST', body: JSON.stringify({ amount, comment: v('t_comment') || null })
+    });
+    closeModal(); toast(`Баланс пополнен на ${fmt(amount)} ₽`);
+    loadOrgInfo(); loadOrgs();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function openInvite() {
+  openModal('Пригласить сотрудника', `
+    <div class="space-y-3">
+      <div><label class="text-xs text-muted block mb-1">Имя *</label><input id="i_name" placeholder="Иван Иванов" /></div>
+      <div><label class="text-xs text-muted block mb-1">Email *</label><input id="i_email" type="email" placeholder="ivan@company.ru" /></div>
+      <div><label class="text-xs text-muted block mb-1">Пароль *</label><input id="i_pass" type="password" placeholder="минимум 8 символов" /></div>
+      <div><label class="text-xs text-muted block mb-1">Роль</label>
+        <select id="i_role">
+          <option value="user">Пользователь</option>
+          <option value="admin">Администратор</option>
+        </select>
+      </div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+     <button class="btn btn-primary" onclick="doInvite()">Пригласить</button>`
+  );
+}
+
+async function doInvite() {
+  const body = { name: v('i_name'), email: v('i_email'), password: v('i_pass'), role: v('i_role') };
+  if (!body.name || !body.email || !body.password) { toast('Заполните все поля', 'error'); return; }
+  try {
+    await api(`/superadmin/organizations/${currentOrgId}/invite`, { method:'POST', body: JSON.stringify(body) });
+    closeModal(); toast('Пользователь создан'); loadOrgUsers();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function confirmDeleteOrg(id, name) {
+  openModal('Удалить организацию', `
+    <div class="text-sm text-muted">Вы уверены, что хотите удалить <span class="text-white font-medium">${esc(name)}</span>?<br><br>
+    Все данные, пользователи и история запросов будут <span class="text-red-400">удалены безвозвратно</span>.</div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+     <button class="btn btn-danger" onclick="deleteOrg(${id})">Удалить</button>`
+  );
+}
+
+async function deleteOrg(id) {
+  try {
+    await api(`/superadmin/organizations/${id}`, { method: 'DELETE' });
+    closeModal(); closeOrgPanel(); toast('Организация удалена'); loadOrgs();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ─── AUDIT ───────────────────────────────────────────────────────────────────
+
+async function loadAudit(page = 1) {
+  auditPage = page;
+  document.getElementById('auditTable').innerHTML = '<div class="p-8 text-center text-muted text-sm">Загрузка...</div>';
+  try {
+    const data = await api(`/audit?page=${page}&limit=30`);
+    if (!data) return;
+    if (!data.items.length) {
+      document.getElementById('auditTable').innerHTML = '<div class="p-8 text-center text-muted text-sm">Нет записей</div>';
+      return;
+    }
+    const actionColors = {
+      'org.top_up': 'text-green-400', 'org.create': 'text-blue-400',
+      'org.suspend': 'text-red-400', 'org.activate': 'text-green-400',
+      'webhook.create': 'text-purple-400', 'webhook.delete': 'text-red-400',
+      'user.role_change': 'text-yellow-400',
+    };
+    document.getElementById('auditTable').innerHTML = `
+      <table class="w-full text-sm">
+        <thead><tr class="border-b border-border text-left">
+          <th class="px-4 py-3 text-muted font-medium">Действие</th>
+          <th class="px-4 py-3 text-muted font-medium">Объект</th>
+          <th class="px-4 py-3 text-muted font-medium">Детали</th>
+          <th class="px-4 py-3 text-muted font-medium">Время</th>
+        </tr></thead>
+        <tbody>
+          ${data.items.map(a => `<tr class="border-b border-border">
+            <td class="px-4 py-3 font-mono text-xs ${actionColors[a.action]||'text-muted'}">${a.action}</td>
+            <td class="px-4 py-3 text-xs text-muted">${a.target_type || '—'}${a.target_id ? ' #'+a.target_id : ''}</td>
+            <td class="px-4 py-3 text-xs text-muted max-w-xs truncate">${a.details ? JSON.stringify(a.details).slice(0,80) : '—'}</td>
+            <td class="px-4 py-3 text-xs text-muted">${fmtDate(a.created_at)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    const total = data.total;
+    const pages = Math.ceil(total / 30);
+    document.getElementById('auditPager').innerHTML = pages <= 1 ? '' :
+      `<button class="btn btn-ghost text-sm" ${page<=1?'disabled':''} onclick="loadAudit(${page-1})">← Назад</button>
+       <span class="text-muted text-sm py-2">${page} / ${pages}</span>
+       <button class="btn btn-ghost text-sm" ${page>=pages?'disabled':''} onclick="loadAudit(${page+1})">Вперёд →</button>`;
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+function fmt(n) {
+  const num = parseFloat(n);
+  if (isNaN(num)) return '0';
+  if (num >= 1000000) return (num/1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num/1000).toFixed(1) + 'K';
+  return num.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.endsWith('Z') ? s : s+'Z');
+  return d.toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+function statusLabel(s) { return {active:'Активна',trial:'Пробный',suspended:'Приостановлена'}[s] || s; }
+function shortModel(m) { return m.split('/').pop().slice(0, 20); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function v(id) { return (document.getElementById(id)?.value || '').trim(); }
+function infoCard(label, value) { return `<div class="bg-bg rounded-xl p-3"><div class="text-xs text-muted mb-1">${label}</div><div class="text-sm font-medium">${esc(String(value))}</div></div>`; }
+
+function toast(msg, type = 'success') {
+  const c = document.getElementById('toasts');
+  const d = document.createElement('div');
+  d.className = `toast px-4 py-3 rounded-xl text-sm shadow-lg border ${type==='error'?'bg-red-950 border-red-800 text-red-300':'bg-green-950 border-green-800 text-green-300'}`;
+  d.textContent = msg;
+  c.appendChild(d);
+  setTimeout(() => d.remove(), 3100);
+}
+
+// ─── BOOT ────────────────────────────────────────────────────────────────────
+if (token) initApp();
+</script>
+</body>
+</html>

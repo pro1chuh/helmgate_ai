@@ -46,6 +46,9 @@ class Organization(Base):
     # Флаг «алерт о низком балансе уже отправлен» — сбрасывается при пополнении
     low_balance_notified: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # API-ключ этой организации на router.ai — для подтягивания баланса из ЛК провайдера
+    openrouter_api_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

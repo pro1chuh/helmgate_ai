@@ -156,6 +156,8 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs(action)",
             "CREATE INDEX IF NOT EXISTS ix_audit_logs_actor_id ON audit_logs(actor_id)",
             "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs(created_at)",
+            # v3 — ключ router.ai на организацию
+            "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS openrouter_api_key VARCHAR(256)",
         ]
         async with engine.begin() as conn:
             for sql in _manual_migrations:

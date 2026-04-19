@@ -39,6 +39,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://helm:helm@db:5432/helm
       REDIS_URL: redis://redis:6379/0
     volumes:
+      - ./backend/app:/app/app
       - uploads:/app/uploads
       - chroma:/app/chroma
     ports:
