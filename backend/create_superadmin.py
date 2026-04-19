@@ -13,8 +13,13 @@ PASSWORD = "12324352"
 
 async def main():
     from app.config import get_settings
+    from app.models import user, chat, workspace, organization  # noqa — регистрируем все модели
     from app.models.user import User, UserRole
     from app.core.auth import hash_password
+    from app.database import init_db
+
+    # Накатываем миграции (добавляет новые колонки если их нет)
+    await init_db()
 
     settings = get_settings()
     engine = create_async_engine(settings.DATABASE_URL)

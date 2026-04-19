@@ -77,8 +77,20 @@ async def init_db():
                 revoked_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS ix_refresh_token_blacklist_jti ON refresh_token_blacklist(jti)",
-            # Биллинг
-            "CREATE TYPE IF NOT EXISTS orgstatus AS ENUM ('active', 'suspended', 'trial')",
+            # Биллинг — enum создаётся через DO-блок (PostgreSQL не поддерживает CREATE TYPE IF NOT EXISTS)
+            """DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'orgstatus') THEN
+                    CREATE TYPE orgstatus AS ENUM ('active', 'suspended', 'trial');
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+                    CREATE TYPE userrole AS ENUM ('user', 'admin', 'superadmin');
+                ELSE
+                    BEGIN
+                        ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'superadmin';
+                    EXCEPTION WHEN others THEN NULL;
+                    END;
+                END IF;
+            END $$""",
             """CREATE TABLE IF NOT EXISTS organizations (
                 id SERIAL PRIMARY KEY,
                 company_name VARCHAR(255) UNIQUE NOT NULL,
