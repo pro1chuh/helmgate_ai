@@ -447,6 +447,95 @@ async def get_router_stats(
     }
 
 
+@router.get("/finances")
+async def get_finances(
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Общая финансовая картина:
+    - Мастер-аккаунт (OPENROUTER_API_KEY из .env) — главный ключ Helm
+    - Все клиентские ключи (openrouter_api_key на организациях) параллельно
+
+    Возвращает:
+      master: данные мастер-аккаунта (или error если ключ не задан)
+      clients: список { org_id, company_name, usage_usd, limit_usd, balance_usd, ... }
+      summary: { total_client_usage_usd, total_client_balance_usd, clients_with_key, clients_total }
+    """
+    import httpx
+    import asyncio
+    from app.config import get_settings
+    cfg = get_settings()
+
+    async def fetch_key(api_key: str) -> dict:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://openrouter.ai/api/v1/auth/key",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        usage = data.get("usage")
+        limit = data.get("limit")
+        balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+        return {
+            "label": data.get("label"),
+            "usage_usd": usage,
+            "limit_usd": limit,
+            "balance_usd": balance,
+            "is_free_tier": data.get("is_free_tier", False),
+            "rate_limit": data.get("rate_limit"),
+        }
+
+    # --- Мастер-аккаунт ---
+    master = None
+    if cfg.OPENROUTER_API_KEY:
+        try:
+            master = await fetch_key(cfg.OPENROUTER_API_KEY)
+            master["key_hint"] = cfg.OPENROUTER_API_KEY[:8] + "..." + cfg.OPENROUTER_API_KEY[-4:]
+        except Exception as e:
+            master = {"error": str(e)[:200]}
+    else:
+        master = {"error": "OPENROUTER_API_KEY не задан в .env"}
+
+    # --- Клиентские ключи ---
+    result = await db.execute(select(Organization))
+    orgs = result.scalars().all()
+
+    async def fetch_org(org: Organization) -> dict:
+        base = {
+            "org_id": org.id,
+            "company_name": org.company_name,
+            "status": org.status.value,
+            "helm_balance_rub": float(org.balance),
+        }
+        if not org.openrouter_api_key:
+            return {**base, "has_key": False}
+        try:
+            stats = await fetch_key(org.openrouter_api_key)
+            return {**base, "has_key": True, **stats}
+        except Exception as e:
+            return {**base, "has_key": True, "error": str(e)[:100]}
+
+    client_results = await asyncio.gather(*[fetch_org(org) for org in orgs])
+
+    # --- Сводка ---
+    clients_with_key = [c for c in client_results if c.get("has_key")]
+    total_usage = sum(c.get("usage_usd") or 0 for c in clients_with_key if not c.get("error"))
+    total_balance = sum(c.get("balance_usd") or 0 for c in clients_with_key if not c.get("error") and c.get("balance_usd") is not None)
+
+    return {
+        "master": master,
+        "clients": client_results,
+        "summary": {
+            "clients_total": len(orgs),
+            "clients_with_key": len(clients_with_key),
+            "total_client_usage_usd": round(total_usage, 6),
+            "total_client_balance_usd": round(total_balance, 6),
+        },
+    }
+
+
 @router.get("/router-stats")
 async def get_all_router_stats(
     _: User = Depends(require_superadmin),

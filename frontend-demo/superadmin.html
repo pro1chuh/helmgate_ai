@@ -95,6 +95,9 @@ tailwind.config = {
       <div class="nav-item" onclick="showPage('audit')" id="nav-audit">
         <span>📋</span> Audit Log
       </div>
+      <div class="nav-item" onclick="showPage('finances')" id="nav-finances">
+        <span>💰</span> Финансы
+      </div>
     </nav>
     <div class="p-3 border-t border-border">
       <div id="sidebarUser" class="text-xs text-muted mb-2 px-2"></div>
@@ -172,6 +175,50 @@ tailwind.config = {
         </div>
       </div>
       <div class="flex justify-center mt-4 gap-2" id="auditPager"></div>
+    </div>
+
+    <!-- FINANCES -->
+    <div id="pageFinances" class="hidden p-6 max-w-5xl">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h1 class="text-2xl font-bold text-white">Финансы</h1>
+          <div class="text-sm text-muted mt-1">Данные из ЛК router.ai в реальном времени</div>
+        </div>
+        <button class="btn btn-ghost text-sm" onclick="loadFinances()">↻ Обновить</button>
+      </div>
+
+      <!-- Master account -->
+      <div class="mb-6">
+        <div class="text-xs text-muted uppercase tracking-widest mb-3 font-semibold">🔑 Мастер-аккаунт Helm</div>
+        <div id="masterCard" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+        </div>
+      </div>
+
+      <!-- Summary across all clients -->
+      <div class="mb-6">
+        <div class="text-xs text-muted uppercase tracking-widest mb-3 font-semibold">📊 Сводка по клиентам</div>
+        <div id="summaryCards" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+          <div class="skeleton h-24 rounded-xl"></div>
+        </div>
+      </div>
+
+      <!-- Clients table -->
+      <div class="bg-card rounded-xl border border-border overflow-hidden">
+        <div class="flex items-center justify-between p-4 border-b border-border">
+          <div class="font-semibold text-white">Клиенты — баланс router.ai</div>
+          <div class="text-xs text-muted">Только организации с настроенным ключом</div>
+        </div>
+        <div id="clientsFinanceTable" class="overflow-x-auto">
+          <div class="p-8 text-center text-muted text-sm">Загрузка...</div>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -306,7 +353,7 @@ async function initApp() {
 // ─── NAVIGATION ─────────────────────────────────────────────────────────────
 
 function showPage(name) {
-  ['dashboard','organizations','audit'].forEach(p => {
+  ['dashboard','organizations','audit','finances'].forEach(p => {
     document.getElementById(`page${p.charAt(0).toUpperCase()+p.slice(1)}`).classList.add('hidden');
     document.getElementById(`nav-${p}`).classList.remove('active');
   });
@@ -315,6 +362,7 @@ function showPage(name) {
   if (name === 'dashboard') loadDashboard();
   if (name === 'organizations') loadOrgs();
   if (name === 'audit') loadAudit();
+  if (name === 'finances') loadFinances();
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
@@ -823,6 +871,99 @@ function toast(msg, type = 'success') {
   d.textContent = msg;
   c.appendChild(d);
   setTimeout(() => d.remove(), 3100);
+}
+
+// ─── FINANCES ────────────────────────────────────────────────────────────────
+
+async function loadFinances() {
+  // Reset skeletons
+  document.getElementById('masterCard').innerHTML = [1,2,3,4].map(() => `<div class="skeleton h-24 rounded-xl"></div>`).join('');
+  document.getElementById('summaryCards').innerHTML = [1,2,3,4].map(() => `<div class="skeleton h-24 rounded-xl"></div>`).join('');
+  document.getElementById('clientsFinanceTable').innerHTML = `<div class="p-8 text-center text-muted text-sm">Загрузка данных с router.ai...</div>`;
+
+  try {
+    const d = await api('/superadmin/finances');
+    if (!d) return;
+
+    // — Мастер-аккаунт —
+    const m = d.master;
+    if (m.error) {
+      document.getElementById('masterCard').innerHTML = `
+        <div class="col-span-4 bg-red-900/20 border border-red-900/40 rounded-xl p-4 text-red-400 text-sm">
+          ❌ ${esc(m.error)}
+        </div>`;
+    } else {
+      const balClr = m.balance_usd === null ? 'text-white' : m.balance_usd > 10 ? 'text-green-400' : m.balance_usd > 2 ? 'text-yellow-400' : 'text-red-400';
+      document.getElementById('masterCard').innerHTML = `
+        ${finCard('💸 Потрачено', m.usage_usd !== null ? '$' + m.usage_usd.toFixed(4) : '—', m.label || 'Основной ключ')}
+        ${finCard('💳 Остаток', m.balance_usd !== null ? '$' + m.balance_usd.toFixed(4) : m.limit_usd === null ? '∞' : '—', 'кредитов', balClr)}
+        ${finCard('🔒 Лимит', m.limit_usd !== null ? '$' + m.limit_usd : 'Без лимита', '')}
+        ${finCard('⚡ Rate limit', m.rate_limit ? m.rate_limit.requests + ' req/' + m.rate_limit.interval : '—', m.is_free_tier ? '🆓 Free tier' : '✅ Paid')}
+      `;
+    }
+
+    // — Сводка по клиентам —
+    const s = d.summary;
+    document.getElementById('summaryCards').innerHTML = `
+      ${finCard('🏢 Клиентов', s.clients_total, 'всего организаций')}
+      ${finCard('🔑 С ключом', s.clients_with_key, 'настроен router.ai')}
+      ${finCard('📤 Расход клиентов', '$' + s.total_client_usage_usd.toFixed(4), 'суммарно потрачено')}
+      ${finCard('💰 Остаток клиентов', '$' + s.total_client_balance_usd.toFixed(4), 'суммарный остаток')}
+    `;
+
+    // — Таблица клиентов —
+    const withKey = d.clients.filter(c => c.has_key);
+    const withoutKey = d.clients.filter(c => !c.has_key);
+
+    if (withKey.length === 0) {
+      document.getElementById('clientsFinanceTable').innerHTML = `<div class="p-8 text-center text-muted text-sm">Ни одна организация не имеет ключа router.ai. Добавьте ключ в настройках организации.</div>`;
+    } else {
+      document.getElementById('clientsFinanceTable').innerHTML = `
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-muted border-b border-border">
+              <th class="py-3 pl-4 pr-3 font-medium">Организация</th>
+              <th class="py-3 pr-3 font-medium">Статус</th>
+              <th class="py-3 pr-3 font-medium">Название ключа</th>
+              <th class="py-3 pr-3 font-medium text-right">Потрачено</th>
+              <th class="py-3 pr-3 font-medium text-right">Остаток</th>
+              <th class="py-3 pr-3 font-medium text-right">Лимит</th>
+              <th class="py-3 pr-4 font-medium text-right">Баланс Helm</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            ${withKey.map(c => {
+              if (c.error) return `<tr>
+                <td class="py-3 pl-4 pr-3 font-medium text-white">${esc(c.company_name)}</td>
+                <td class="py-3 pr-3">${statusBadge(c.status)}</td>
+                <td class="py-3 pr-3 text-red-400 text-xs" colspan="4">❌ ${esc(c.error)}</td>
+                <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
+              </tr>`;
+              const balClr = c.balance_usd === null ? 'text-white' : c.balance_usd > 5 ? 'text-green-400' : c.balance_usd > 1 ? 'text-yellow-400' : 'text-red-400';
+              return `<tr>
+                <td class="py-3 pl-4 pr-3 font-medium text-white cursor-pointer hover:text-accent" onclick="openOrgPanel(${c.org_id})">${esc(c.company_name)}</td>
+                <td class="py-3 pr-3">${statusBadge(c.status)}</td>
+                <td class="py-3 pr-3 text-muted text-xs">${c.label ? esc(c.label) : '—'}</td>
+                <td class="py-3 pr-3 text-right text-white">${c.usage_usd !== null ? '$' + c.usage_usd.toFixed(4) : '—'}</td>
+                <td class="py-3 pr-3 text-right font-semibold ${balClr}">${c.balance_usd !== null ? '$' + c.balance_usd.toFixed(4) : c.limit_usd === null ? '∞' : '—'}</td>
+                <td class="py-3 pr-3 text-right text-muted">${c.limit_usd !== null ? '$' + c.limit_usd : '∞'}</td>
+                <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        ${withoutKey.length > 0 ? `<div class="px-4 py-3 border-t border-border text-xs text-muted">⚠️ ${withoutKey.length} орг. без ключа router.ai: ${withoutKey.map(c=>esc(c.company_name)).join(', ')}</div>` : ''}
+      `;
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function finCard(title, value, sub, valClass = 'text-white') {
+  return `<div class="bg-card rounded-xl p-4 border border-border">
+    <div class="text-xs text-muted mb-2">${title}</div>
+    <div class="text-xl font-bold ${valClass} mb-1">${value}</div>
+    ${sub ? `<div class="text-xs text-muted">${sub}</div>` : ''}
+  </div>`;
 }
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
