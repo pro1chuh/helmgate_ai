@@ -48,13 +48,13 @@ class Settings(BaseSettings):
     # Основная модель — текст, общение, документы
     CLOUD_MODEL_TEXT: str = "meta-llama/llama-3.3-70b-instruct"
 
-    # Код — Qwen2.5-Coder-32B
-    CLOUD_MODEL_CODE: str = "qwen/qwen2.5-coder-32b-instruct"
+    # Код — KAT-Coder-Pro V2
+    CLOUD_MODEL_CODE: str = "kwaipilot/kat-coder-pro-v2"
 
-    # Тяжёлый reasoning — DeepSeek R1
-    CLOUD_MODEL_REASONING: str = "deepseek/deepseek-r1"
+    # Тяжёлый reasoning — Gemini 2.5 Pro
+    CLOUD_MODEL_REASONING: str = "google/gemini-2.5-pro"
 
-    # Vision — анализ изображений
+    # Vision — анализ изображений (TODO: найти замену на routerai.ru)
     CLOUD_MODEL_VISION: str = "meta-llama/llama-3.2-90b-vision-instruct"
 
     # Image generation — Gemini 2.5 Flash Image (дефолт)
