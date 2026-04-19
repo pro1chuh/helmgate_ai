@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helm — корпоративный AI-ассистент</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #F7F8FC;
+  --white: #FFFFFF;
+  --accent: #6366F1;
+  --accent-dark: #4F46E5;
+  --accent-light: #EEF2FF;
+  --text: #111827;
+  --muted: #6B7280;
+  --border: #E5E7EB;
+  --surface: #FFFFFF;
+  --nav-h: 68px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Manrope', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ──────────── NAV ──────────── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: var(--nav-h);
+  background: rgba(247,248,252,0.88);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 40px;
+  gap: 40px;
+}
+
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 800; font-size: 20px; color: var(--text);
+  text-decoration: none; flex-shrink: 0;
+}
+.nav-logo-icon {
+  width: 34px; height: 34px;
+  background: var(--accent);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 15px;
+}
+
+.nav-links {
+  display: flex; gap: 28px;
+  list-style: none; flex: 1;
+}
+.nav-links a {
+  color: var(--muted); text-decoration: none;
+  font-size: 14px; font-weight: 500;
+  transition: color .2s;
+}
+.nav-links a:hover { color: var(--text); }
+
+.nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+
+.lang-toggle {
+  display: flex; background: var(--border);
+  border-radius: 8px; overflow: hidden;
+  flex-shrink: 0;
+}
+.lang-btn {
+  padding: 5px 12px; font-size: 13px; font-weight: 600;
+  color: var(--muted); cursor: pointer; border: none;
+  background: transparent; transition: all .2s;
+  font-family: inherit;
+}
+.lang-btn.active { background: var(--white); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+.btn-nav {
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 9px;
+  padding: 9px 20px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background .2s;
+  font-family: inherit;
+}
+.btn-nav:hover { background: var(--accent-dark); }
+
+/* ──────────── HERO ──────────── */
+.hero {
+  padding-top: calc(var(--nav-h) + 80px);
+  padding-bottom: 80px;
+  max-width: 1160px; margin: 0 auto; padding-left: 40px; padding-right: 40px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center;
+}
+
+.hero-eyebrow {
+  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--accent-light); color: var(--accent);
+  border-radius: 20px; padding: 5px 14px;
+  font-size: 13px; font-weight: 700; letter-spacing: .3px;
+  margin-bottom: 24px;
+}
+.hero-eyebrow span { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; display: inline-block; }
+
+.hero-title {
+  font-size: clamp(36px, 4vw, 52px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+  color: var(--text);
+  margin-bottom: 20px;
+  text-wrap: pretty;
+}
+.hero-title em { color: var(--accent); font-style: normal; }
+
+.hero-sub {
+  font-size: 17px; color: var(--muted); line-height: 1.7;
+  margin-bottom: 36px; font-weight: 400;
+  text-wrap: pretty;
+}
+
+.hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.btn-primary {
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 11px;
+  padding: 14px 28px; font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: all .2s; font-family: inherit;
+  box-shadow: 0 4px 20px rgba(99,102,241,.3);
+}
+.btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); box-shadow: 0 6px 28px rgba(99,102,241,.4); }
+
+.btn-ghost {
+  background: var(--white); color: var(--text);
+  border: 1.5px solid var(--border); border-radius: 11px;
+  padding: 14px 28px; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .2s; font-family: inherit;
+}
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+.hero-trust {
+  margin-top: 28px; display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); font-weight: 500;
+}
+.hero-trust-dot { width: 6px; height: 6px; background: #22C55E; border-radius: 50%; }
+
+/* Hero chat preview */
+.hero-visual {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 48px rgba(0,0,0,.08);
+}
+.hv-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  background: #FAFAFA;
+}
+.hv-dots { display: flex; gap: 6px; }
+.hv-dot { width: 10px; height: 10px; border-radius: 50%; }
+.hv-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+.hv-badge { margin-left: auto; background: var(--accent-light); color: var(--accent); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+
+.hv-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+
+.hv-msg { display: flex; gap: 10px; }
+.hv-msg.user { flex-direction: row-reverse; }
+.hv-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.hv-msg.user .hv-avatar { background: var(--accent); color: #fff; }
+.hv-msg.ai .hv-avatar { background: var(--accent-light); color: var(--accent); }
+
+.hv-bubble {
+  padding: 10px 14px; border-radius: 12px;
+  font-size: 13px; line-height: 1.55; max-width: 240px;
+}
+.hv-msg.user .hv-bubble { background: var(--accent); color: #fff; border-top-right-radius: 3px; }
+.hv-msg.ai .hv-bubble { background: #F3F4F6; color: var(--text); border-top-left-radius: 3px; }
+.hv-model-tag {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  background: var(--accent-light); color: var(--accent);
+  padding: 2px 6px; border-radius: 4px; margin-bottom: 5px; letter-spacing: .3px;
+}
+
+/* ──────────── SECTION HEADERS ──────────── */
+.section-header {
+  text-align: center; margin-bottom: 56px;
+}
+.section-label {
+  display: inline-block; background: var(--accent-light); color: var(--accent);
+  font-size: 12px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+  padding: 5px 14px; border-radius: 20px; margin-bottom: 16px;
+}
+.section-title {
+  font-size: clamp(28px, 3vw, 40px); font-weight: 800;
+  letter-spacing: -1px; line-height: 1.15;
+  text-wrap: pretty;
+}
+.section-sub {
+  margin-top: 14px; font-size: 17px; color: var(--muted); line-height: 1.65; font-weight: 400;
+  max-width: 560px; margin-left: auto; margin-right: auto;
+}
+
+/* ──────────── FEATURES ──────────── */
+.features { padding: 80px 40px; max-width: 1160px; margin: 0 auto; }
+
+.features-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+}
+
+.feat-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px;
+  transition: box-shadow .25s, transform .25s;
+}
+.feat-card:hover { box-shadow: 0 8px 32px rgba(0,0,0,.07); transform: translateY(-2px); }
+
+.feat-icon {
+  width: 44px; height: 44px; background: var(--accent-light);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  margin-bottom: 18px;
+}
+.feat-icon svg { width: 22px; height: 22px; stroke: var(--accent); }
+.feat-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.feat-desc { font-size: 14px; color: var(--muted); line-height: 1.65; }
+
+/* ──────────── AI ROUTER ──────────── */
+.router-section { padding: 80px 40px; background: var(--white); }
+.router-inner { max-width: 1160px; margin: 0 auto; }
+
+.router-table {
+  width: 100%; border-collapse: collapse;
+  border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+.router-table thead { background: #F9FAFB; }
+.router-table th {
+  padding: 14px 20px; text-align: left;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  letter-spacing: .6px; text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.router-table td {
+  padding: 14px 20px;
+  font-size: 14px; border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.router-table tr:last-child td { border-bottom: none; }
+.router-table tr:hover td { background: var(--bg); }
+.task-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 600; font-size: 14px;
+}
+.task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.model-name { font-weight: 600; color: var(--text); }
+.provider-tag {
+  display: inline-block; background: #F3F4F6; color: var(--muted);
+  font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+}
+
+/* ──────────── DEMO CHAT ──────────── */
+.demo-section { padding: 80px 40px; max-width: 1160px; margin: 0 auto; }
+
+.demo-container {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 8px 48px rgba(0,0,0,.07);
+  display: grid; grid-template-columns: 260px 1fr;
+}
+
+.demo-sidebar {
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  background: #FAFAFA;
+}
+.demo-sidebar-title {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .8px;
+  margin-bottom: 12px;
+}
+.demo-prompt {
+  padding: 10px 12px; border-radius: 10px;
+  font-size: 13px; font-weight: 500; color: var(--text);
+  cursor: pointer; transition: all .2s;
+  margin-bottom: 6px; line-height: 1.45;
+  border: 1px solid transparent;
+}
+.demo-prompt:hover { background: var(--white); border-color: var(--border); }
+.demo-prompt.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+.demo-chat-area {
+  display: flex; flex-direction: column; height: 440px;
+}
+.demo-messages {
+  flex: 1; padding: 24px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.demo-messages::-webkit-scrollbar { width: 4px; }
+.demo-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.demo-msg { display: flex; gap: 10px; }
+.demo-msg.user { flex-direction: row-reverse; }
+.demo-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+}
+.demo-msg.user .demo-avatar { background: var(--accent); color: #fff; }
+.demo-msg.ai .demo-avatar { background: var(--accent-light); color: var(--accent); }
+.demo-bubble {
+  padding: 11px 16px; border-radius: 14px;
+  font-size: 14px; line-height: 1.6; max-width: 500px;
+}
+.demo-msg.user .demo-bubble { background: var(--accent); color: #fff; border-top-right-radius: 4px; }
+.demo-msg.ai .demo-bubble { background: #F3F4F6; color: var(--text); border-top-left-radius: 4px; }
+.demo-model-tag {
+  display: block; font-size: 10px; font-weight: 700;
+  color: var(--accent); margin-bottom: 6px; letter-spacing: .3px;
+}
+
+.typing-cursor {
+  display: inline-block; width: 2px; height: 14px;
+  background: var(--accent); vertical-align: middle;
+  margin-left: 2px; animation: blink .7s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.demo-input-row {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 10px; align-items: center;
+  background: #FAFAFA;
+}
+.demo-input {
+  flex: 1; background: var(--white); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; color: var(--text); font-family: inherit;
+  outline: none; transition: border-color .2s;
+}
+.demo-input:focus { border-color: var(--accent); }
+.demo-send {
+  width: 38px; height: 38px;
+  background: var(--accent); border: none; border-radius: 10px;
+  color: #fff; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background .2s;
+}
+.demo-send:hover { background: var(--accent-dark); }
+.demo-send:disabled { opacity: .4; cursor: not-allowed; }
+.demo-send svg { width: 16px; height: 16px; }
+
+/* ──────────── FAQ ──────────── */
+.faq-section { padding: 80px 40px; background: var(--white); }
+.faq-inner { max-width: 760px; margin: 0 auto; }
+
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-question {
+  width: 100%; text-align: left;
+  padding: 22px 0; font-size: 16px; font-weight: 600;
+  color: var(--text); cursor: pointer; background: none; border: none;
+  font-family: inherit; display: flex; justify-content: space-between;
+  align-items: center; gap: 16px;
+}
+.faq-chevron {
+  flex-shrink: 0; width: 20px; height: 20px;
+  stroke: var(--muted); transition: transform .3s;
+}
+.faq-item.open .faq-chevron { transform: rotate(180deg); }
+.faq-answer {
+  display: none; padding-bottom: 20px;
+  font-size: 15px; color: var(--muted); line-height: 1.7;
+}
+.faq-item.open .faq-answer { display: block; }
+
+/* ──────────── CTA BANNER ──────────── */
+.cta-section {
+  padding: 80px 40px;
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  text-align: center;
+}
+.cta-title {
+  font-size: clamp(28px, 3.5vw, 44px); font-weight: 800;
+  color: #fff; letter-spacing: -1px; margin-bottom: 16px;
+  text-wrap: pretty;
+}
+.cta-sub { font-size: 17px; color: rgba(255,255,255,.75); margin-bottom: 36px; }
+.btn-white {
+  background: #fff; color: var(--accent);
+  border: none; border-radius: 11px;
+  padding: 15px 32px; font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: all .2s; font-family: inherit;
+  box-shadow: 0 4px 24px rgba(0,0,0,.15);
+}
+.btn-white:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,.2); }
+
+/* ──────────── FOOTER ──────────── */
+footer {
+  background: var(--text); color: rgba(255,255,255,.5);
+  padding: 40px 40px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 20px;
+}
+.footer-logo { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 16px; }
+.footer-logo-icon {
+  width: 28px; height: 28px; background: var(--accent); border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; color: #fff;
+}
+.footer-links { display: flex; gap: 24px; }
+.footer-links a { color: rgba(255,255,255,.5); text-decoration: none; font-size: 14px; transition: color .2s; }
+.footer-links a:hover { color: #fff; }
+.footer-tg {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px; padding: 8px 16px;
+  color: #fff; text-decoration: none; font-size: 14px; font-weight: 600;
+  transition: background .2s;
+}
+.footer-tg:hover { background: rgba(255,255,255,.14); }
+
+/* ──────────── MODAL ──────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 999;
+  background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--white); border-radius: 20px;
+  padding: 40px; width: 100%; max-width: 460px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.2);
+  position: relative;
+}
+.modal-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--bg); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--muted);
+  font-size: 18px; transition: background .2s;
+}
+.modal-close:hover { background: var(--border); }
+.modal h2 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+.modal p { font-size: 14px; color: var(--muted); margin-bottom: 28px; }
+.form-field { margin-bottom: 16px; }
+.form-field label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.form-field input, .form-field select {
+  width: 100%; background: var(--bg); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 11px 14px;
+  font-size: 14px; color: var(--text); font-family: inherit; outline: none;
+  transition: border-color .2s;
+}
+.form-field input:focus, .form-field select:focus { border-color: var(--accent); }
+.form-success { display: none; text-align: center; padding: 20px 0; }
+.form-success-icon { font-size: 40px; margin-bottom: 12px; }
+.form-success h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+.form-success p { font-size: 14px; color: var(--muted); }
+
+/* ──────────── TWEAKS ──────────── */
+#tweaks-panel {
+  position: fixed; bottom: 24px; right: 24px; z-index: 200;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 16px; padding: 20px; width: 260px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  display: none;
+}
+#tweaks-panel h4 { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+.tweak-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.tweak-label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.tweak-toggle {
+  width: 38px; height: 22px; background: var(--border);
+  border-radius: 11px; position: relative; cursor: pointer;
+  transition: background .2s;
+}
+.tweak-toggle.on { background: var(--accent); }
+.tweak-toggle::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; background: #fff;
+  border-radius: 50%; transition: left .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.tweak-toggle.on::after { left: 19px; }
+.tweak-select {
+  background: var(--bg); border: 1.5px solid var(--border);
+  border-radius: 8px; padding: 5px 10px;
+  font-size: 13px; font-family: inherit; color: var(--text);
+  cursor: pointer; outline: none;
+}
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-visual { display: none; }
+  .features-grid { grid-template-columns: 1fr 1fr; }
+  .demo-container { grid-template-columns: 1fr; }
+  .demo-sidebar { display: none; }
+  nav .nav-links { display: none; }
+}
+@media (max-width: 600px) {
+  nav { padding: 0 20px; gap: 20px; }
+  .hero, .features, .demo-section, .faq-inner { padding-left: 20px; padding-right: 20px; }
+  .features-grid { grid-template-columns: 1fr; }
+  footer { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <div class="nav-logo-icon">H</div>
+    Helm
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features" data-i18n="nav_features">Возможности</a></li>
+    <li><a href="#router" data-i18n="nav_router">AI-роутинг</a></li>
+    <li><a href="#demo" data-i18n="nav_demo">Демо</a></li>
+    <li><a href="#faq">FAQ</a></li>
+  </ul>
+  <div class="nav-right">
+    <div class="lang-toggle">
+      <button class="lang-btn active" onclick="setLang('ru')">RU</button>
+      <button class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
+    <button class="btn-nav" onclick="openModal()" data-i18n="cta_nav">Запросить демо</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section style="padding-top: 0; background: var(--bg);">
+  <div class="hero">
+    <div class="hero-left">
+      <div class="hero-eyebrow"><span></span> <span data-i18n="hero_badge">Корпоративный AI-ассистент</span></div>
+      <h1 class="hero-title" data-i18n="hero_title">Один чат —<br><em>все задачи</em><br>вашей команды</h1>
+      <p class="hero-sub" data-i18n="hero_sub">Helm автоматически выбирает лучшую AI-модель под каждый запрос. Код, аналитика, документы, голос, изображения — всё в одном интерфейсе без переплат и вендор-локина.</p>
+      <div class="hero-ctas">
+        <button class="btn-primary" onclick="openModal()" data-i18n="cta_primary">Запросить демо</button>
+        <button class="btn-ghost" onclick="document.getElementById('demo').scrollIntoView({behavior:'smooth'})" data-i18n="cta_secondary">Попробовать онлайн</button>
+      </div>
+      <div class="hero-trust">
+        <div class="hero-trust-dot"></div>
+        <span data-i18n="hero_trust">Развёртывание за 1 день · On-premise · Соответствие 152-ФЗ</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="hv-header">
+        <div class="hv-dots">
+          <div class="hv-dot" style="background:#FF5F57"></div>
+          <div class="hv-dot" style="background:#FEBC2E"></div>
+          <div class="hv-dot" style="background:#28C840"></div>
+        </div>
+        <span class="hv-title">Helm — AI-ассистент</span>
+        <span class="hv-badge">● live</span>
+      </div>
+      <div class="hv-body">
+        <div class="hv-msg user">
+          <div class="hv-avatar">А</div>
+          <div class="hv-bubble">Напиши функцию на Python для парсинга CSV</div>
+        </div>
+        <div class="hv-msg ai">
+          <div class="hv-avatar">H</div>
+          <div class="hv-bubble">
+            <div class="hv-model-tag">⚡ qwen2.5-coder-32b</div>
+            <div>Вот оптимальная реализация с обработкой ошибок...</div>
+          </div>
+        </div>
+        <div class="hv-msg user">
+          <div class="hv-avatar">А</div>
+          <div class="hv-bubble">Проанализируй стратегию выхода на рынок</div>
+        </div>
+        <div class="hv-msg ai">
+          <div class="hv-avatar">H</div>
+          <div class="hv-bubble">
+            <div class="hv-model-tag">🧠 deepseek-r1</div>
+            <div>Провожу глубокий анализ рынка...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="section-header">
+    <div class="section-label" data-i18n="feat_label">Возможности</div>
+    <h2 class="section-title" data-i18n="feat_title">Всё, что нужно команде —<br>без лишнего</h2>
+  </div>
+  <div class="features-grid">
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f1_title">Умный AI-роутинг</div>
+      <div class="feat-desc" data-i18n="f1_desc">Классификатор задач за ~200 мс определяет тип запроса и выбирает оптимальную модель. Лучшее качество при минимальной стоимости.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f2_title">Работа с документами</div>
+      <div class="feat-desc" data-i18n="f2_desc">Загружайте PDF, DOCX, TXT — Helm индексирует и отвечает на вопросы по вашим файлам. Локальные ONNX-эмбеддинги, данные не покидают сеть.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f3_title">Без вендор-локина</div>
+      <div class="feat-desc" data-i18n="f3_desc">Подключайте routerai.ru, OpenRouter, Groq или Ollama. Cloud или полностью локально — ваш выбор. Переключение без перенастройки.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f4_title">Воркспейсы для команд</div>
+      <div class="feat-desc" data-i18n="f4_desc">Разграничение данных между отделами, управление участниками и ролями. Панель администратора со статистикой использования.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f5_title">Безопасность и 152-ФЗ</div>
+      <div class="feat-desc" data-i18n="f5_desc">On-premise режим через Ollama, JWT + refresh токены, blacklist при logout. Валидация файлов по magic bytes. Полное соответствие требованиям.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="feat-title" data-i18n="f6_title">Мониторинг и метрики</div>
+      <div class="feat-desc" data-i18n="f6_desc">Prometheus + Grafana в комплекте. Latency до первого токена, токены на запрос, ошибки, rate-limit хиты — всё в реальном времени.</div>
+    </div>
+  </div>
+</section>
+
+<!-- AI ROUTER -->
+<section class="router-section" id="router">
+  <div class="router-inner">
+    <div class="section-header">
+      <div class="section-label" data-i18n="router_label">AI-роутинг</div>
+      <h2 class="section-title" data-i18n="router_title">Правильная модель<br>для каждой задачи</h2>
+      <p class="section-sub" data-i18n="router_sub">Не нужно думать, какую модель использовать. Helm делает это автоматически, экономя время и бюджет.</p>
+    </div>
+    <table class="router-table">
+      <thead>
+        <tr>
+          <th data-i18n="rt_h1">Тип задачи</th>
+          <th data-i18n="rt_h2">Модель</th>
+          <th data-i18n="rt_h3">Провайдер</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#6366F1"></div><span data-i18n="rt_r1">Текст, общение</span></div></td>
+          <td><span class="model-name">Llama 3.3 70B</span></td>
+          <td><span class="provider-tag">routerai.ru</span></td>
+        </tr>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#F59E0B"></div><span data-i18n="rt_r2">Код, разработка</span></div></td>
+          <td><span class="model-name">Qwen 2.5 Coder 32B</span></td>
+          <td><span class="provider-tag">routerai.ru</span></td>
+        </tr>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#8B5CF6"></div><span data-i18n="rt_r3">Глубокий анализ</span></div></td>
+          <td><span class="model-name">DeepSeek R1</span></td>
+          <td><span class="provider-tag">routerai.ru</span></td>
+        </tr>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#10B981"></div><span data-i18n="rt_r4">Анализ изображений</span></div></td>
+          <td><span class="model-name">Llama 3.2 90B Vision</span></td>
+          <td><span class="provider-tag">routerai.ru</span></td>
+        </tr>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#F43F5E"></div><span data-i18n="rt_r5">Голос → текст</span></div></td>
+          <td><span class="model-name">Whisper Large v3 Turbo</span></td>
+          <td><span class="provider-tag">Groq</span></td>
+        </tr>
+        <tr>
+          <td><div class="task-badge"><div class="task-dot" style="background:#06B6D4"></div><span data-i18n="rt_r6">Ответы по документам</span></div></td>
+          <td><span class="model-name">Llama 3.3 70B + ChromaDB</span></td>
+          <td><span class="provider-tag">routerai.ru</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- DEMO -->
+<section class="demo-section" id="demo">
+  <div class="section-header">
+    <div class="section-label" data-i18n="demo_label">Интерактивное демо</div>
+    <h2 class="section-title" data-i18n="demo_title">Попробуйте прямо сейчас</h2>
+    <p class="section-sub" data-i18n="demo_sub">Выберите пример запроса или введите свой. Helm определит тип задачи и покажет, какая модель будет выбрана.</p>
+  </div>
+  <div class="demo-container">
+    <div class="demo-sidebar">
+      <div class="demo-sidebar-title" data-i18n="demo_examples">Примеры запросов</div>
+      <div class="demo-prompt active" onclick="selectPrompt(this, 0)" data-i18n="dp0">Напиши SQL-запрос для аналитики продаж</div>
+      <div class="demo-prompt" onclick="selectPrompt(this, 1)" data-i18n="dp1">Проанализируй стратегию выхода на рынок</div>
+      <div class="demo-prompt" onclick="selectPrompt(this, 2)" data-i18n="dp2">Объясни разницу между REST и GraphQL</div>
+      <div class="demo-prompt" onclick="selectPrompt(this, 3)" data-i18n="dp3">Напиши письмо клиенту об изменении цен</div>
+    </div>
+    <div class="demo-chat-area">
+      <div class="demo-messages" id="demo-messages"></div>
+      <div class="demo-input-row">
+        <input class="demo-input" id="demo-input" placeholder="Введите запрос..." onkeydown="if(event.key==='Enter')sendDemo()">
+        <button class="demo-send" id="demo-send" onclick="sendDemo()">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section" id="faq">
+  <div class="faq-inner">
+    <div class="section-header">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title" data-i18n="faq_title">Частые вопросы</h2>
+    </div>
+    <div id="faq-list"></div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2 class="cta-title" data-i18n="cta_title">Готовы внедрить AI<br>в вашу команду?</h2>
+  <p class="cta-sub" data-i18n="cta_sub_text">Развёртывание за 1 день. Без скрытых платежей. Поддержка на каждом этапе.</p>
+  <button class="btn-white" onclick="openModal()" data-i18n="cta_primary">Запросить демо</button>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">
+    <div class="footer-logo-icon">H</div>
+    Helm
+  </div>
+  <div class="footer-links">
+    <a href="#features" data-i18n="nav_features">Возможности</a>
+    <a href="#router" data-i18n="nav_router">AI-роутинг</a>
+    <a href="#faq">FAQ</a>
+  </div>
+  <a class="footer-tg" href="https://t.me/helmgate" target="_blank">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.03 9.57c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.893.651z"/></svg>
+    <span data-i18n="tg_link">Telegram</span>
+  </a>
+</footer>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div id="form-body">
+      <h2 data-i18n="modal_title">Запросить демо</h2>
+      <p data-i18n="modal_sub">Оставьте контакты — свяжемся в течение 24 часов</p>
+      <div class="form-field">
+        <label data-i18n="form_name">Имя</label>
+        <input type="text" id="f-name" placeholder="Иван Иванов">
+      </div>
+      <div class="form-field">
+        <label data-i18n="form_email">Рабочий email</label>
+        <input type="email" id="f-email" placeholder="ivan@company.ru">
+      </div>
+      <div class="form-field">
+        <label data-i18n="form_company">Компания</label>
+        <input type="text" id="f-company" placeholder="ООО Ромашка">
+      </div>
+      <div class="form-field">
+        <label data-i18n="form_size">Размер команды</label>
+        <select id="f-size">
+          <option data-i18n="fs1">50–100 сотрудников</option>
+          <option data-i18n="fs2">100–200 сотрудников</option>
+          <option data-i18n="fs3">200–300 сотрудников</option>
+          <option data-i18n="fs4">300+ сотрудников</option>
+        </select>
+      </div>
+      <button class="btn-primary" style="width:100%;margin-top:4px" onclick="submitForm()" data-i18n="form_submit">Отправить заявку</button>
+    </div>
+    <div class="form-success" id="form-success">
+      <div class="form-success-icon">✅</div>
+      <h3 data-i18n="success_title">Заявка получена!</h3>
+      <p data-i18n="success_sub">Мы свяжемся с вами в течение 24 часов. Ждите письма на указанный email.</p>
+    </div>
+  </div>
+</div>
+
+<!-- TWEAKS -->
+<div id="tweaks-panel">
+  <h4>Tweaks</h4>
+  <div class="tweak-row">
+    <span class="tweak-label">Тёмная тема</span>
+    <div class="tweak-toggle" id="t-dark" onclick="toggleDark()"></div>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">Акцент</span>
+    <select class="tweak-select" onchange="setAccent(this.value)">
+      <option value="#6366F1">Indigo</option>
+      <option value="#8B5CF6">Violet</option>
+      <option value="#0EA5E9">Sky</option>
+      <option value="#10B981">Emerald</option>
+    </select>
+  </div>
+  <div class="tweak-row">
+    <span class="tweak-label">Анимации</span>
+    <div class="tweak-toggle on" id="t-anim" onclick="toggleAnim()"></div>
+  </div>
+</div>
+
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "dark": false,
+  "accent": "#10B981",
+  "anim": true
+}/*EDITMODE-END*/;
+
+// ──────────── i18n ────────────
+const COPY = {
+  ru: {
+    nav_features: 'Возможности', nav_router: 'AI-роутинг', nav_demo: 'Демо',
+    cta_nav: 'Запросить демо', hero_badge: 'Корпоративный AI-ассистент',
+    hero_title: 'Один чат —<br><em>все задачи</em><br>вашей команды',
+    hero_sub: 'Helm автоматически выбирает лучшую AI-модель под каждый запрос. Код, аналитика, документы, голос, изображения — всё в одном интерфейсе без переплат и вендор-локина.',
+    cta_primary: 'Запросить демо', cta_secondary: 'Попробовать онлайн',
+    hero_trust: 'Развёртывание за 1 день · On-premise · Соответствие 152-ФЗ',
+    feat_label: 'Возможности', feat_title: 'Всё, что нужно команде —<br>без лишнего',
+    f1_title: 'Умный AI-роутинг', f1_desc: 'Классификатор задач за ~200 мс определяет тип запроса и выбирает оптимальную модель. Лучшее качество при минимальной стоимости.',
+    f2_title: 'Работа с документами', f2_desc: 'Загружайте PDF, DOCX, TXT — Helm индексирует и отвечает на вопросы по вашим файлам. Локальные ONNX-эмбеддинги, данные не покидают сеть.',
+    f3_title: 'Без вендор-локина', f3_desc: 'Подключайте routerai.ru, OpenRouter, Groq или Ollama. Cloud или полностью локально — ваш выбор.',
+    f4_title: 'Воркспейсы для команд', f4_desc: 'Разграничение данных между отделами, управление участниками и ролями. Панель администратора со статистикой.',
+    f5_title: 'Безопасность и 152-ФЗ', f5_desc: 'On-premise режим через Ollama, JWT токены, blacklist при logout. Полное соответствие требованиям регулятора.',
+    f6_title: 'Мониторинг и метрики', f6_desc: 'Prometheus + Grafana в комплекте. Latency, токены, ошибки — всё в реальном времени.',
+    router_label: 'AI-роутинг', router_title: 'Правильная модель<br>для каждой задачи',
+    router_sub: 'Не нужно думать, какую модель использовать. Helm делает это автоматически, экономя время и бюджет.',
+    rt_h1: 'Тип задачи', rt_h2: 'Модель', rt_h3: 'Провайдер',
+    rt_r1: 'Текст, общение', rt_r2: 'Код, разработка', rt_r3: 'Глубокий анализ',
+    rt_r4: 'Анализ изображений', rt_r5: 'Голос → текст', rt_r6: 'Ответы по документам',
+    demo_label: 'Интерактивное демо', demo_title: 'Попробуйте прямо сейчас',
+    demo_sub: 'Выберите пример запроса или введите свой. Helm определит тип задачи и покажет, какая модель будет выбрана.',
+    demo_examples: 'Примеры запросов',
+    dp0: 'Напиши SQL-запрос для аналитики продаж',
+    dp1: 'Проанализируй стратегию выхода на рынок',
+    dp2: 'Объясни разницу между REST и GraphQL',
+    dp3: 'Напиши письмо клиенту об изменении цен',
+    faq_title: 'Частые вопросы',
+    cta_title: 'Готовы внедрить AI<br>в вашу команду?',
+    cta_sub_text: 'Развёртывание за 1 день. Без скрытых платежей. Поддержка на каждом этапе.',
+    tg_link: 'Telegram',
+    modal_title: 'Запросить демо', modal_sub: 'Оставьте контакты — свяжемся в течение 24 часов',
+    form_name: 'Имя', form_email: 'Рабочий email', form_company: 'Компания', form_size: 'Размер команды',
+    fs1: '50–100 сотрудников', fs2: '100–200 сотрудников', fs3: '200–300 сотрудников', fs4: '300+ сотрудников',
+    form_submit: 'Отправить заявку', success_title: 'Заявка получена!',
+    success_sub: 'Мы свяжемся с вами в течение 24 часов. Ждите письма на указанный email.',
+  },
+  en: {
+    nav_features: 'Features', nav_router: 'AI Routing', nav_demo: 'Demo',
+    cta_nav: 'Request Demo', hero_badge: 'Enterprise AI Assistant',
+    hero_title: 'One chat —<br><em>every task</em><br>your team needs',
+    hero_sub: 'Helm automatically routes each request to the best AI model. Code, analytics, documents, voice, images — one interface with no vendor lock-in.',
+    cta_primary: 'Request Demo', cta_secondary: 'Try Online',
+    hero_trust: '1-day deployment · On-premise · Compliant with data regulations',
+    feat_label: 'Features', feat_title: 'Everything your team needs —<br>nothing it doesn\'t',
+    f1_title: 'Smart AI Routing', f1_desc: 'Task classifier in ~200ms picks the optimal model automatically. Best quality at lowest cost, every time.',
+    f2_title: 'Document Q&A (RAG)', f2_desc: 'Upload PDF, DOCX, TXT — Helm indexes and answers questions from your files. Local ONNX embeddings, data never leaves your network.',
+    f3_title: 'No Vendor Lock-In', f3_desc: 'Connect routerai.ru, OpenRouter, Groq, or Ollama. Cloud or fully on-premise — your choice, switch anytime.',
+    f4_title: 'Team Workspaces', f4_desc: 'Isolate data between departments, manage members and roles. Admin panel with usage analytics.',
+    f5_title: 'Security & Compliance', f5_desc: 'On-premise via Ollama, JWT + refresh tokens, logout blacklist. File validation by magic bytes. Full regulatory compliance.',
+    f6_title: 'Monitoring & Metrics', f6_desc: 'Prometheus + Grafana included. Latency, tokens, errors, rate-limit hits — all in real time.',
+    router_label: 'AI Routing', router_title: 'The right model<br>for every task',
+    router_sub: 'You don\'t need to think about which model to use. Helm does it automatically, saving time and budget.',
+    rt_h1: 'Task Type', rt_h2: 'Model', rt_h3: 'Provider',
+    rt_r1: 'Text, conversations', rt_r2: 'Code, development', rt_r3: 'Deep analysis',
+    rt_r4: 'Image analysis', rt_r5: 'Voice → text', rt_r6: 'Document Q&A',
+    demo_label: 'Interactive Demo', demo_title: 'Try it right now',
+    demo_sub: 'Select a sample query or type your own. Helm will identify the task type and show which model is selected.',
+    demo_examples: 'Sample Queries',
+    dp0: 'Write a SQL query for sales analytics',
+    dp1: 'Analyze our go-to-market strategy',
+    dp2: 'Explain the difference between REST and GraphQL',
+    dp3: 'Write an email to a client about pricing changes',
+    faq_title: 'Frequently Asked Questions',
+    cta_title: 'Ready to bring AI<br>to your team?',
+    cta_sub_text: '1-day deployment. No hidden fees. Support at every step.',
+    tg_link: 'Telegram',
+    modal_title: 'Request a Demo', modal_sub: 'Leave your contact — we\'ll reach out within 24 hours',
+    form_name: 'Name', form_email: 'Work email', form_company: 'Company', form_size: 'Team size',
+    fs1: '50–100 employees', fs2: '100–200 employees', fs3: '200–300 employees', fs4: '300+ employees',
+    form_submit: 'Submit Request', success_title: 'Request received!',
+    success_sub: 'We\'ll reach out within 24 hours. Check your email.',
+  }
+};
+
+const FAQS = {
+  ru: [
+    { q: 'Как быстро можно внедрить Helm?', a: 'Развёртывание занимает 1 рабочий день. Всё поставляется через Docker Compose — достаточно одной команды. Команда Helm помогает с настройкой и онбордингом.' },
+    { q: 'Поддерживает ли Helm работу без интернета (air-gapped)?', a: 'Да. В Local-режиме Helm работает полностью локально через Ollama — никаких внешних API. Идеально для компаний с требованиями 152-ФЗ и закрытых контуров.' },
+    { q: 'Как работает тарификация?', a: 'Helm — платформа, которую вы разворачиваете сами. Вы платите только за использование AI-провайдеров (routerai.ru, OpenRouter, Groq) по их тарифам. Никаких скрытых наценок.' },
+    { q: 'Можно ли подключить корпоративные документы?', a: 'Да. RAG-пайплайн позволяет загружать PDF, DOCX и TXT-файлы. Документы индексируются локально с помощью ONNX MiniLM — данные не отправляются на внешние серверы.' },
+    { q: 'Есть ли ограничения на количество пользователей?', a: 'Нет. Helm горизонтально масштабируется. Prod-конфигурация включает gunicorn с несколькими uvicorn-воркерами и Nginx для балансировки нагрузки.' },
+    { q: 'Как обеспечивается безопасность данных?', a: 'JWT access + refresh токены, bcrypt для паролей, blacklist токенов при logout, rate limiting 20 запросов/мин, валидация файлов по magic bytes. On-premise режим — данные никуда не уходят.' },
+  ],
+  en: [
+    { q: 'How quickly can Helm be deployed?', a: 'Deployment takes 1 business day. Everything ships via Docker Compose — a single command gets you running. The Helm team assists with setup and onboarding.' },
+    { q: 'Does Helm support air-gapped environments?', a: 'Yes. In Local mode, Helm runs fully offline via Ollama — no external API calls. Perfect for regulated industries and closed network environments.' },
+    { q: 'How does pricing work?', a: 'Helm is a self-hosted platform. You only pay for the AI providers you use (routerai.ru, OpenRouter, Groq) at their rates. No markups or hidden fees.' },
+    { q: 'Can I connect corporate documents?', a: 'Yes. The RAG pipeline lets you upload PDF, DOCX, and TXT files. Documents are indexed locally using ONNX MiniLM — data never leaves your network.' },
+    { q: 'Are there user limits?', a: 'No. Helm scales horizontally. The production config includes gunicorn with multiple uvicorn workers and Nginx for load balancing.' },
+    { q: 'How is data security ensured?', a: 'JWT access + refresh tokens, bcrypt passwords, token blacklist on logout, rate limiting at 20 req/min, file validation by magic bytes. On-premise mode means data stays on your servers.' },
+  ]
+};
+
+// Demo responses
+const DEMO_DATA = {
+  ru: [
+    { q: 'Напиши SQL-запрос для аналитики продаж', model: '⚡ qwen2.5-coder-32b · Код', a: `SELECT\n  DATE_TRUNC('month', created_at) AS month,\n  SUM(amount) AS total_sales,\n  COUNT(*) AS order_count,\n  AVG(amount) AS avg_order\nFROM orders\nWHERE created_at >= NOW() - INTERVAL '12 months'\nGROUP BY 1\nORDER BY 1;` },
+    { q: 'Проанализируй стратегию выхода на рынок', model: '🧠 deepseek-r1 · Анализ', a: 'Для B2B SaaS-продукта в сегменте 50–300 сотрудников оптимальна стратегия Product-Led Growth с элементами Sales-Led на enterprise-сделках.\n\nКлючевые векторы:\n1. Freemium или trial для онбординга снизу-вверх\n2. ABM-кампании на целевые отрасли (финтех, ритейл, производство)\n3. Партнёрский канал через системных интеграторов\n\nЦикл сделки — 2–6 недель, ключевое возражение — безопасность данных.' },
+    { q: 'Объясни разницу между REST и GraphQL', model: '💬 llama-3.3-70b · Текст', a: 'REST — архитектурный стиль, где каждый ресурс — отдельный URL. Клиент получает фиксированный набор данных, часто избыточный.\n\nGraphQL — язык запросов, где клиент точно описывает, какие поля ему нужны. Одна точка входа, гибкая структура ответа.\n\nКогда REST лучше: простые CRUD-операции, кэширование через CDN.\nКогда GraphQL лучше: мобильные клиенты с ограниченным трафиком, сложные связанные данные.' },
+    { q: 'Напиши письмо клиенту об изменении цен', model: '💬 llama-3.3-70b · Текст', a: 'Тема: Обновление тарифов с 1 июня 2025\n\nДобрый день!\n\nБлагодарим вас за доверие к нашему продукту. В связи с расширением функциональности и улучшением инфраструктуры с 1 июня стоимость подписки изменится.\n\nВаш текущий тариф сохраняется до конца оплаченного периода. Подробности — в личном кабинете.\n\nЕсть вопросы? Напишите нам — разберёмся.\n\nС уважением, команда Helm' },
+  ],
+  en: [
+    { q: 'Write a SQL query for sales analytics', model: '⚡ qwen2.5-coder-32b · Code', a: `SELECT\n  DATE_TRUNC('month', created_at) AS month,\n  SUM(amount) AS total_sales,\n  COUNT(*) AS order_count,\n  AVG(amount) AS avg_order\nFROM orders\nWHERE created_at >= NOW() - INTERVAL '12 months'\nGROUP BY 1\nORDER BY 1;` },
+    { q: 'Analyze our go-to-market strategy', model: '🧠 deepseek-r1 · Analysis', a: 'For a B2B SaaS targeting 50–300 employees, a Product-Led Growth strategy with Sales-Led elements for enterprise deals is optimal.\n\nKey vectors:\n1. Freemium or trial for bottom-up adoption\n2. ABM campaigns targeting key verticals (fintech, retail, manufacturing)\n3. Partner channel through system integrators\n\nDeal cycle: 2–6 weeks. Primary objection: data security.' },
+    { q: 'Explain the difference between REST and GraphQL', model: '💬 llama-3.3-70b · Text', a: 'REST is an architectural style where each resource has its own URL. The client receives a fixed set of data, often more than needed.\n\nGraphQL is a query language where the client specifies exactly which fields it needs. Single endpoint, flexible response shape.\n\nWhen REST wins: simple CRUD, CDN caching.\nWhen GraphQL wins: mobile clients with limited bandwidth, complex relational data.' },
+    { q: 'Write an email to a client about pricing changes', model: '💬 llama-3.3-70b · Text', a: 'Subject: Pricing Update Effective June 1, 2025\n\nHi,\n\nThank you for being a valued customer. As we continue to expand our feature set and improve infrastructure, our pricing will be updated starting June 1.\n\nYour current plan is locked in until the end of your billing cycle. Full details are in your account dashboard.\n\nQuestions? Just reply to this email.\n\nBest,\nThe Helm Team' },
+  ]
+};
+
+let lang = localStorage.getItem('helm_land_lang') || 'ru';
+let isStreaming = false;
+let selectedPromptIdx = 0;
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('helm_land_lang', l);
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.textContent === l.toUpperCase()));
+  applyTranslations();
+  buildFAQ();
+  updateDemoPrompts();
+  // Re-render demo
+  const msgs = document.getElementById('demo-messages');
+  msgs.innerHTML = '';
+}
+
+function applyTranslations() {
+  const t = COPY[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (t[key] !== undefined) el.innerHTML = t[key];
+  });
+}
+
+function buildFAQ() {
+  const list = document.getElementById('faq-list');
+  list.innerHTML = '';
+  FAQS[lang].forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'faq-item';
+    div.innerHTML = `
+      <button class="faq-question" onclick="toggleFAQ(this)">
+        ${item.q}
+        <svg class="faq-chevron" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-answer">${item.a}</div>`;
+    list.appendChild(div);
+  });
+}
+
+function toggleFAQ(btn) {
+  const item = btn.parentElement;
+  const wasOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+  if (!wasOpen) item.classList.add('open');
+}
+
+function updateDemoPrompts() {
+  const prompts = document.querySelectorAll('.demo-prompt');
+  DEMO_DATA[lang].forEach((d, i) => {
+    if (prompts[i]) prompts[i].innerHTML = d.q;
+  });
+}
+
+function selectPrompt(el, idx) {
+  document.querySelectorAll('.demo-prompt').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  selectedPromptIdx = idx;
+  document.getElementById('demo-input').value = DEMO_DATA[lang][idx].q;
+}
+
+function sendDemo() {
+  const input = document.getElementById('demo-input');
+  const text = input.value.trim();
+  if (!text || isStreaming) return;
+  input.value = '';
+  isStreaming = true;
+  document.getElementById('demo-send').disabled = true;
+
+  const msgs = document.getElementById('demo-messages');
+
+  // User msg
+  const userDiv = document.createElement('div');
+  userDiv.className = 'demo-msg user';
+  userDiv.innerHTML = `<div class="demo-avatar">Я</div><div class="demo-bubble">${text}</div>`;
+  msgs.appendChild(userDiv);
+
+  // Find matching response
+  const dataSet = DEMO_DATA[lang];
+  let response = dataSet.find(d => d.q === text);
+  if (!response) {
+    // Try to match by keyword or use default
+    if (/sql|запрос|query/i.test(text)) response = dataSet[0];
+    else if (/стратег|analyz|market/i.test(text)) response = dataSet[1];
+    else if (/код|code|rest|graphql/i.test(text)) response = dataSet[2];
+    else response = dataSet[3] || dataSet[0];
+  }
+
+  // AI msg
+  const aiDiv = document.createElement('div');
+  aiDiv.className = 'demo-msg ai';
+  const bubble = document.createElement('div');
+  bubble.className = 'demo-bubble';
+  const modelTag = document.createElement('span');
+  modelTag.className = 'demo-model-tag';
+  modelTag.textContent = response.model;
+  const textSpan = document.createElement('span');
+  const cursor = document.createElement('span');
+  cursor.className = 'typing-cursor';
+  bubble.appendChild(modelTag);
+  bubble.appendChild(textSpan);
+  bubble.appendChild(cursor);
+  aiDiv.innerHTML = '<div class="demo-avatar">H</div>';
+  aiDiv.appendChild(bubble);
+  msgs.appendChild(aiDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // Stream text
+  let i = 0;
+  const full = response.a;
+  const speed = 18;
+  function tick() {
+    if (i < full.length) {
+      textSpan.textContent += full[i++];
+      msgs.scrollTop = msgs.scrollHeight;
+      setTimeout(tick, speed);
+    } else {
+      cursor.remove();
+      isStreaming = false;
+      document.getElementById('demo-send').disabled = false;
+    }
+  }
+  setTimeout(tick, 400);
+}
+
+// Modal
+function openModal() {
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('form-body').style.display = 'block';
+  document.getElementById('form-success').style.display = 'none';
+}
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+function submitForm() {
+  document.getElementById('form-body').style.display = 'none';
+  document.getElementById('form-success').style.display = 'block';
+}
+
+// Tweaks
+let tweaks = { ...TWEAK_DEFAULTS };
+
+window.addEventListener('message', e => {
+  if (e.data?.type === '__activate_edit_mode') document.getElementById('tweaks-panel').style.display = 'block';
+  if (e.data?.type === '__deactivate_edit_mode') document.getElementById('tweaks-panel').style.display = 'none';
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+function toggleDark() {
+  tweaks.dark = !tweaks.dark;
+  document.getElementById('t-dark').classList.toggle('on', tweaks.dark);
+  if (tweaks.dark) {
+    document.documentElement.style.setProperty('--bg', '#0F1117');
+    document.documentElement.style.setProperty('--white', '#1A1D27');
+    document.documentElement.style.setProperty('--text', '#E2E4EF');
+    document.documentElement.style.setProperty('--border', '#2A2D3A');
+    document.documentElement.style.setProperty('--surface', '#1A1D27');
+  } else {
+    document.documentElement.style.setProperty('--bg', '#F7F8FC');
+    document.documentElement.style.setProperty('--white', '#FFFFFF');
+    document.documentElement.style.setProperty('--text', '#111827');
+    document.documentElement.style.setProperty('--border', '#E5E7EB');
+    document.documentElement.style.setProperty('--surface', '#FFFFFF');
+  }
+  window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { dark: tweaks.dark } }, '*');
+}
+
+function setAccent(val) {
+  tweaks.accent = val;
+  document.documentElement.style.setProperty('--accent', val);
+  const darkened = val;
+  window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { accent: val } }, '*');
+}
+
+function toggleAnim() {
+  tweaks.anim = !tweaks.anim;
+  document.getElementById('t-anim').classList.toggle('on', tweaks.anim);
+  window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { anim: tweaks.anim } }, '*');
+}
+
+// Init
+applyTranslations();
+buildFAQ();
+updateDemoPrompts();
+
+// Apply saved tweaks
+if (tweaks.dark) toggleDark();
+if (tweaks.accent !== '#6366F1') setAccent(tweaks.accent);
+
+// Auto-send first demo
+setTimeout(() => {
+  document.getElementById('demo-input').value = DEMO_DATA[lang][0].q;
+  sendDemo();
+}, 800);
+</script>
+</body>
+</html>
