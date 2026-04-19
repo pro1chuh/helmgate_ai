@@ -14,15 +14,30 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://helm:helm@db:5432/helm
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - uploads:/app/uploads
       - chroma:/app/chroma
@@ -57,6 +72,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   uploads:
   chroma:
   ollama_data:

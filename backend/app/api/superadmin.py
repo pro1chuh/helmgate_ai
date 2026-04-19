@@ -328,6 +328,8 @@ async def top_up_balance(
     org.balance += body.amount
     if org.status == OrgStatus.suspended:
         org.status = OrgStatus.active
+    # Сбрасываем флаг алерта — при следующем падении порога алерт отправится снова
+    org.low_balance_notified = False
 
     db.add(OrganizationTopUp(
         organization_id=org_id,
@@ -335,6 +337,16 @@ async def top_up_balance(
         comment=body.comment,
         created_by=current_user.id,
     ))
+
+    from app.services.audit import audit_log, AuditAction
+    await audit_log(
+        db=db,
+        action=AuditAction.ORG_TOP_UP,
+        actor_id=current_user.id,
+        target_type="organization",
+        target_id=org_id,
+        details={"amount": float(body.amount), "comment": body.comment, "new_balance": float(org.balance)},
+    )
 
     await db.commit()
     await db.refresh(org)

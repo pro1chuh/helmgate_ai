@@ -38,7 +38,7 @@ async def init_db():
     Если Alembic не настроен или что-то пошло не так — fallback на create_all,
     чтобы приложение всегда запустилось.
     """
-    from app.models import user, chat, workspace, organization  # noqa — регистрируем модели
+    from app.models import user, chat, workspace, organization, audit_log  # noqa — регистрируем модели
 
     try:
         import asyncio
@@ -127,6 +127,35 @@ async def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS ix_usage_logs_org_id ON usage_logs(organization_id)",
             "CREATE INDEX IF NOT EXISTS ix_usage_logs_created_at ON usage_logs(created_at)",
+            # v2 — суточный лимит токенов на пользователя
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_token_limit INTEGER",
+            # v2 — флаг алерта о низком балансе
+            "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS low_balance_notified BOOLEAN DEFAULT FALSE",
+            # v2 — webhooks
+            """CREATE TABLE IF NOT EXISTS webhooks (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+                url VARCHAR(2048) NOT NULL,
+                events JSONB DEFAULT '[]',
+                secret VARCHAR(256),
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_webhooks_org_id ON webhooks(organization_id)",
+            # v2 — audit log
+            """CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                action VARCHAR(100) NOT NULL,
+                actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                target_type VARCHAR(50),
+                target_id INTEGER,
+                details JSONB,
+                ip_address VARCHAR(45),
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs(action)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_actor_id ON audit_logs(actor_id)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs(created_at)",
         ]
         async with engine.begin() as conn:
             for sql in _manual_migrations:

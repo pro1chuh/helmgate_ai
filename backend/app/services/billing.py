@@ -10,11 +10,14 @@
   gemini-2.5-flash-image:  вход 29₽,  выход 247₽
 """
 import logging
+import httpx
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # Цены за 1 токен в рублях (= цена за 1M / 1_000_000)
 _PRICING: dict[str, tuple[Decimal, Decimal]] = {
@@ -81,15 +84,81 @@ async def log_and_deduct(
     result = await db.execute(select(Organization).where(Organization.id == organization_id))
     org = result.scalar_one_or_none()
     if org:
+        old_balance = org.balance
         org.balance = max(Decimal("0"), org.balance - cost)
+
         # Приостанавливаем если баланс кончился
         if org.balance == Decimal("0"):
             from app.models.organization import OrgStatus
             org.status = OrgStatus.suspended
             logger.warning(f"Organization {org.company_name} balance exhausted — suspended")
+            await db.commit()
+            # Алерт директору
+            await _send_balance_alert(
+                org_name=org.company_name,
+                balance=float(org.balance),
+                threshold=0.0,
+                exhausted=True,
+            )
+            return cost
+
+        # Алерт при низком балансе (пересечение порога вниз)
+        threshold = Decimal(str(settings.LOW_BALANCE_THRESHOLD_RUB))
+        if old_balance > threshold >= org.balance and not org.low_balance_notified:
+            org.low_balance_notified = True
+            logger.warning(
+                f"Organization {org.company_name} balance below threshold "
+                f"{threshold}₽ (current: {org.balance:.2f}₽)"
+            )
+            await db.commit()
+            await _send_balance_alert(
+                org_name=org.company_name,
+                balance=float(org.balance),
+                threshold=float(threshold),
+                exhausted=False,
+            )
+            return cost
 
     await db.commit()
     return cost
+
+
+async def _send_balance_alert(
+    org_name: str,
+    balance: float,
+    threshold: float,
+    exhausted: bool,
+) -> None:
+    """Отправляет Telegram-уведомление когда баланс организации низкий или обнулился."""
+    token = settings.TELEGRAM_ALERT_TOKEN
+    chat_id = settings.TELEGRAM_ALERT_CHAT_ID
+    if not token or not chat_id:
+        return
+
+    if exhausted:
+        text = (
+            f"🚨 <b>Helm: баланс исчерпан</b>\n\n"
+            f"Организация: <b>{org_name}</b>\n"
+            f"Баланс: <b>0 ₽</b>\n\n"
+            f"Аккаунт <b>приостановлен</b>. Пополните баланс для продолжения работы."
+        )
+    else:
+        text = (
+            f"⚠️ <b>Helm: низкий баланс</b>\n\n"
+            f"Организация: <b>{org_name}</b>\n"
+            f"Баланс: <b>{balance:.2f} ₽</b>\n"
+            f"Порог: {threshold:.0f} ₽\n\n"
+            f"Рекомендуем пополнить баланс заблаговременно."
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            )
+    except Exception as exc:
+        logger.warning(f"Failed to send balance alert to Telegram: {exc}")
 
 
 async def check_balance(organization_id: int | None, db: AsyncSession) -> bool:

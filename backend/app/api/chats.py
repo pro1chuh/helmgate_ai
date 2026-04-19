@@ -413,6 +413,19 @@ async def send_message(
             detail="Баланс организации исчерпан. Обратитесь к администратору для пополнения.",
         )
 
+    # Проверяем суточный лимит токенов пользователя
+    from app.services.cache import get_daily_tokens
+    user_limit = current_user.daily_token_limit
+    if user_limit is None:
+        user_limit = settings.DEFAULT_DAILY_TOKEN_LIMIT
+    if user_limit and user_limit > 0:
+        used_today = await get_daily_tokens(current_user.id)
+        if used_today >= user_limit:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Суточный лимит токенов исчерпан ({user_limit:,} токенов). Лимит сбросится в полночь UTC.",
+            )
+
     # Проверяем что чат принадлежит пользователю
     result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
@@ -512,6 +525,7 @@ async def send_message(
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
         llm_error = None
+        usage_out: dict = {}  # заполняется реальными токенами при стриминге
 
         # --- IMAGE GEN: одиночный запрос вместо стрима ---
         if route_result.task_type == TaskType.IMAGE_GEN:
@@ -531,11 +545,13 @@ async def send_message(
 
         else:
             # Стримим токены с таймаутом 90 секунд на всю генерацию
+            # usage_out будет заполнен реальными токенами из ответа провайдера
             try:
                 async def _stream():
                     async for token in llm_client.stream_chat(
                         route=route_result,
                         messages=llm_messages,
+                        usage_out=usage_out,
                     ):
                         full_response.append(token)
                         chunk = {"type": "token", "content": token}
@@ -567,18 +583,39 @@ async def send_message(
         db.add(assistant_msg)
         await db.commit()
 
-        # Биллинг — логируем и списываем с баланса организации
+        # Определяем реальные токены (из провайдера или fallback-оценка)
+        if route_result.task_type == TaskType.IMAGE_GEN:
+            # Для генерации изображений нет токенов — считаем по символам промпта
+            actual_input_tokens = max(1, len(body.content) // 4)
+            actual_output_tokens = 1
+        else:
+            actual_input_tokens = usage_out.get(
+                "input_tokens",
+                max(1, sum(len(str(m.get("content", "") or "")) // 4 for m in llm_messages))
+            )
+            actual_output_tokens = usage_out.get(
+                "output_tokens",
+                max(1, len(full_content) // 4)
+            )
+
+        # Обновляем суточный счётчик токенов пользователя
+        total_tokens = actual_input_tokens + actual_output_tokens
+        background_tasks.add_task(
+            _update_token_counter_background,
+            user_id=current_user.id,
+            tokens=total_tokens,
+        )
+
+        # Биллинг — логируем и списываем с баланса организации (реальные токены)
         if current_user.organization_id:
-            input_tokens = max(1, sum(len(m.get("content", "") or "") // 4 for m in llm_messages))
-            output_tokens = max(1, len(full_content) // 4)
             background_tasks.add_task(
                 _billing_background,
                 organization_id=current_user.organization_id,
                 user_id=current_user.id,
                 model=route_result.model,
                 task_type=route_result.task_type.value,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
+                input_tokens=actual_input_tokens,
+                output_tokens=actual_output_tokens,
                 db_url=settings.DATABASE_URL,
             )
 
@@ -591,6 +628,23 @@ async def send_message(
             db_url=settings.DATABASE_URL,
         )
 
+        # Webhook — уведомляем подписчиков о новом сообщении ассистента
+        if current_user.organization_id and full_content:
+            background_tasks.add_task(
+                _webhook_dispatch_background,
+                organization_id=current_user.organization_id,
+                event="message.created",
+                payload={
+                    "chat_id": chat_id,
+                    "message_id": assistant_msg.id,
+                    "model": route_result.model,
+                    "task_type": route_result.task_type.value,
+                    "input_tokens": actual_input_tokens,
+                    "output_tokens": actual_output_tokens,
+                },
+                db_url=settings.DATABASE_URL,
+            )
+
         # Сигнал завершения
         yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_msg.id}, ensure_ascii=False)}\n\n"
 
@@ -602,6 +656,12 @@ async def send_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def _update_token_counter_background(user_id: int, tokens: int) -> None:
+    """Фоновая задача: обновляет суточный счётчик токенов пользователя в Redis."""
+    from app.services.cache import increment_daily_tokens
+    await increment_daily_tokens(user_id, tokens)
 
 
 async def _billing_background(
@@ -622,6 +682,17 @@ async def _billing_background(
     async with session_factory() as session:
         await log_and_deduct(organization_id, user_id, model, task_type, input_tokens, output_tokens, session)
     await engine.dispose()
+
+
+async def _webhook_dispatch_background(
+    organization_id: int,
+    event: str,
+    payload: dict,
+    db_url: str,
+) -> None:
+    """Фоновая задача: отправляет webhook-уведомление."""
+    from app.services.webhook import dispatch_event
+    await dispatch_event(organization_id, event, payload, db_url)
 
 
 async def _extract_facts_background(
