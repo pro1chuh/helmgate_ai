@@ -39,3 +39,14 @@ async def init_db():
     except (ProgrammingError, IntegrityError):
         # Enum types already exist (e.g. on restart with multiple workers) — safe to ignore
         pass
+
+    # Добавляем новые колонки если их нет (вместо Alembic-миграций)
+    migrations = [
+        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS system_prompt TEXT",
+    ]
+    async with engine.begin() as conn:
+        for sql in migrations:
+            try:
+                await conn.execute(__import__("sqlalchemy").text(sql))
+            except Exception:
+                pass

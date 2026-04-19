@@ -35,6 +35,7 @@ SYSTEM_PROMPT = """Ты — Helm, корпоративный AI-ассистен
 class ChatOut(BaseModel):
     id: int
     title: str
+    system_prompt: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -50,6 +51,16 @@ class MessageOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True, "protected_namespaces": ()}
+
+
+class CreateChatRequest(BaseModel):
+    title: str | None = None
+    system_prompt: str | None = None
+
+
+class UpdateChatRequest(BaseModel):
+    title: str | None = None
+    system_prompt: str | None = None
 
 
 class SendMessageRequest(BaseModel):
@@ -175,11 +186,38 @@ async def list_chats(
 
 @router.post("", response_model=ChatOut, status_code=201)
 async def create_chat(
+    body: CreateChatRequest = CreateChatRequest(),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    chat = Chat(user_id=current_user.id)
+    chat = Chat(
+        user_id=current_user.id,
+        title=body.title or "Новый чат",
+        system_prompt=body.system_prompt,
+    )
     db.add(chat)
+    await db.commit()
+    await db.refresh(chat)
+    return chat
+
+
+@router.patch("/{chat_id}", response_model=ChatOut)
+async def update_chat(
+    chat_id: int,
+    body: UpdateChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if body.title is not None:
+        chat.title = body.title
+    if body.system_prompt is not None:
+        chat.system_prompt = body.system_prompt
     await db.commit()
     await db.refresh(chat)
     return chat
@@ -310,8 +348,9 @@ async def send_message(
         )
         rag_context = build_rag_context(chunks, body.content)
 
-    # System prompt с фактами о пользователе (+ RAG-контекст если есть)
-    system_prompt = SYSTEM_PROMPT + facts_context
+    # System prompt: кастомный для чата или дефолтный
+    base_prompt = chat.system_prompt if chat.system_prompt else SYSTEM_PROMPT
+    system_prompt = base_prompt + facts_context
     if rag_context:
         system_prompt = system_prompt + "\n\n" + rag_context
 
