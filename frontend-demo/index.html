@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Helm — AI-ассистент</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -210,8 +211,65 @@
     line-height: 1.65;
     max-width: 680px;
     word-break: break-word;
-    white-space: pre-wrap;
   }
+
+  /* Markdown rendering */
+  .bubble .md p { margin-bottom: 10px; }
+  .bubble .md p:last-child { margin-bottom: 0; }
+  .bubble .md h1, .bubble .md h2, .bubble .md h3,
+  .bubble .md h4, .bubble .md h5, .bubble .md h6 {
+    font-weight: 700; margin: 14px 0 6px; color: #e2e8f0; line-height: 1.3;
+  }
+  .bubble .md h1 { font-size: 1.25em; }
+  .bubble .md h2 { font-size: 1.1em; }
+  .bubble .md h3 { font-size: 1em; }
+  .bubble .md ul, .bubble .md ol { padding-left: 20px; margin-bottom: 10px; }
+  .bubble .md li { margin-bottom: 4px; }
+  .bubble .md li p { margin-bottom: 0; }
+  .bubble .md strong { font-weight: 700; color: #f1f5f9; }
+  .bubble .md em { font-style: italic; color: #cbd5e1; }
+  .bubble .md code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12.5px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #e6edf3;
+  }
+  .bubble .md pre {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+  .bubble .md pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #e6edf3;
+    white-space: pre;
+  }
+  .bubble .md blockquote {
+    border-left: 3px solid #6366f1;
+    margin: 8px 0;
+    padding: 6px 12px;
+    color: #94a3b8;
+    background: rgba(99,102,241,.06);
+    border-radius: 0 6px 6px 0;
+  }
+  .bubble .md table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+  .bubble .md th, .bubble .md td { border: 1px solid #30363d; padding: 6px 10px; text-align: left; }
+  .bubble .md th { background: #161b22; font-weight: 600; color: #e2e8f0; }
+  .bubble .md tr:nth-child(even) td { background: #0d1117; }
+  .bubble .md a { color: #818cf8; text-decoration: underline; }
+  .bubble .md hr { border: none; border-top: 1px solid #30363d; margin: 12px 0; }
+  /* streaming: plain text, no wrap issues */
+  .bubble .text-content { white-space: pre-wrap; }
 
   .msg.user .bubble {
     background: var(--user-bubble);
@@ -398,6 +456,9 @@
 </div>
 
 <script>
+// Настройка marked — безопасный рендеринг, корректные переносы
+marked.setOptions({ breaks: true, gfm: true });
+
 const API = 'http://localhost:8000/api';
 let token = localStorage.getItem('helm_token');
 let userName = localStorage.getItem('helm_user');
@@ -605,7 +666,19 @@ async function sendMessage() {
             );
           }
 
-          if (evt.type === 'done' || evt.type === 'error') {
+          if (evt.type === 'done') {
+            cursor.remove();
+            // Рендерим накопленный текст как markdown
+            const textNode = bubble.querySelector('.text-content');
+            if (textNode && fullText) {
+              const md = document.createElement('div');
+              md.className = 'md';
+              md.innerHTML = marked.parse(fullText);
+              textNode.replaceWith(md);
+            }
+          }
+
+          if (evt.type === 'error') {
             cursor.remove();
           }
 
@@ -634,10 +707,17 @@ function appendMessage(role, text, empty = false) {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   if (!empty) {
-    const span = document.createElement('span');
-    span.className = 'text-content';
-    span.textContent = text;
-    bubble.appendChild(span);
+    if (role === 'assistant' && text) {
+      const md = document.createElement('div');
+      md.className = 'md';
+      md.innerHTML = marked.parse(text);
+      bubble.appendChild(md);
+    } else {
+      const span = document.createElement('span');
+      span.className = 'text-content';
+      span.textContent = text;
+      bubble.appendChild(span);
+    }
   }
 
   div.appendChild(avatar);
