@@ -435,16 +435,14 @@ async def get_router_stats(
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"router.ai API error: {str(e)[:200]}")
 
-    total_credits = data.get("total_credits")
-    total_usage   = data.get("total_usage")
-    balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
+    credits = data.get("credits")
 
     return {
         "org_id": org_id,
         "label": data.get("label"),
-        "usage_usd": total_usage,
-        "limit_usd": total_credits,
-        "balance_usd": balance,
+        "usage_usd": None,
+        "limit_usd": None,
+        "balance_usd": round(credits, 4) if credits is not None else None,
         "is_free_tier": data.get("is_free_tier", False),
         "rate_limit": data.get("rate_limit"),
     }
@@ -480,16 +478,13 @@ async def get_finances(
             )
         resp.raise_for_status()
         raw = resp.json()
-        data = raw.get("data", raw)  # routerai.ru возвращает { data: {...} } или напрямую
-        # /credits: total_credits (куплено), total_usage (потрачено)
-        total_credits = data.get("total_credits")
-        total_usage   = data.get("total_usage")
-        balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
+        data = raw.get("data", raw)
+        credits = data.get("credits")  # routerai.ru: просто остаток баланса
         return {
             "label": data.get("label"),
-            "usage_usd": total_usage,
-            "limit_usd": total_credits,
-            "balance_usd": balance,
+            "usage_usd": None,
+            "limit_usd": None,
+            "balance_usd": round(credits, 4) if credits is not None else None,
             "is_free_tier": data.get("is_free_tier", False),
             "rate_limit": data.get("rate_limit"),
         }
@@ -573,16 +568,14 @@ async def get_all_router_stats(
                 return {"org_id": org.id, "company_name": org.company_name, "error": f"HTTP {resp.status_code}"}
             raw = resp.json()
             data = raw.get("data", raw)
-            total_credits = data.get("total_credits")
-            total_usage   = data.get("total_usage")
-            balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
+            credits = data.get("credits")
             return {
                 "org_id": org.id,
                 "company_name": org.company_name,
                 "label": data.get("label"),
-                "usage_usd": total_usage,
-                "limit_usd": limit,
-                "balance_usd": balance,
+                "usage_usd": None,
+                "limit_usd": None,
+                "balance_usd": round(credits, 4) if credits is not None else None,
                 "is_free_tier": data.get("is_free_tier", False),
             }
         except Exception as e:
