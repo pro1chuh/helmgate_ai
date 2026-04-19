@@ -20,3 +20,4 @@ fpdf2==2.7.9
 filetype==1.2.0
 prometheus-fastapi-instrumentator==7.0.0
 gunicorn==22.0.0
+redis[asyncio]==5.0.8

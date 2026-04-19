@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_db
-from app.api import auth, chats, files, memory, profile, admin, workspaces, images, superadmin
+from app.api import auth, chats, files, memory, profile, admin, workspaces, images, superadmin, webhooks, audit, batch
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -19,9 +19,14 @@ async def lifespan(app: FastAPI):
     logger.info("Helm starting", extra={"mode": settings.DEPLOYMENT_MODE})
     await init_db()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    # Инициализируем Redis (ошибка не прерывает запуск — Redis опциональный)
+    from app.services.cache import get_redis
+    await get_redis()
     yield
     from app.services.llm import llm_client
+    from app.services.cache import close_redis
     await llm_client.aclose()
+    await close_redis()
     logger.info("Helm stopped")
 
 
@@ -51,6 +56,9 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(superadmin.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
+app.include_router(audit.router, prefix="/api")
+app.include_router(batch.router, prefix="/api")
 
 # Prometheus — HTTP-метрики автоматически (latency, status codes, routes)
 # Endpoint: GET /api/metrics — закрыть nginx-ом от публичного доступа в prod

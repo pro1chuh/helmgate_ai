@@ -1,4 +1,4 @@
-from sqlalchemy import String, Boolean, Enum as SAEnum, ForeignKey
+from sqlalchemy import String, Boolean, Enum as SAEnum, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 import enum
@@ -23,6 +23,8 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, default=None)
+    # Суточный лимит токенов (0 = без ограничений, NULL = использовать глобальный дефолт)
+    daily_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     chats: Mapped[list["Chat"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa

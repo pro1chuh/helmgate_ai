@@ -82,6 +82,33 @@ class Settings(BaseSettings):
     # Chroma (RAG)
     CHROMA_PATH: str = "/app/chroma"
 
+    # -------------------------------------------------------
+    # Redis
+    # -------------------------------------------------------
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # -------------------------------------------------------
+    # Billing alerts
+    # -------------------------------------------------------
+    # Порог низкого баланса (рубли) — алерт отправляется один раз при пересечении
+    LOW_BALANCE_THRESHOLD_RUB: float = 100.0
+    # Telegram-бот для системных алертов (баланс, ошибки)
+    # Оставь пустым чтобы отключить алерты
+    TELEGRAM_ALERT_TOKEN: str = ""
+    TELEGRAM_ALERT_CHAT_ID: str = ""
+
+    # -------------------------------------------------------
+    # Per-user daily token limit (0 = без ограничений)
+    # Можно переопределить на уровне конкретного пользователя в БД
+    # -------------------------------------------------------
+    DEFAULT_DAILY_TOKEN_LIMIT: int = 0
+
+    # -------------------------------------------------------
+    # Circuit breaker — LLM failover
+    # -------------------------------------------------------
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 3   # сбоев подряд для открытия
+    CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 60   # секунд до retry
+
     @field_validator("NVIDIA_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", mode="before")
     @classmethod
     def empty_string_allowed(cls, v):

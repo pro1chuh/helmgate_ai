@@ -61,6 +61,7 @@ class LLMClient:
         messages: list[dict],
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        usage_out: dict | None = None,
     ) -> AsyncIterator[str]:
         """
         Стримит ответ от провайдера токен за токеном.
@@ -69,6 +70,11 @@ class LLMClient:
         Retry: до 5 попыток с exponential backoff (1s, 2s, 4s, 8s).
         Если токены уже начали идти — повтор не делается (нельзя дублировать ответ).
         Повторяем при: сетевых ошибках и HTTP 429/500/502/503/504.
+
+        usage_out: если передан словарь, после завершения стрима он будет
+        заполнен реальными значениями {"input_tokens": N, "output_tokens": M}
+        из ответа провайдера (stream_options.include_usage).
+        Если провайдер не вернул usage — остаётся fallback (подсчёт по символам).
         """
         payload = {
             "model": route.model,
@@ -76,6 +82,9 @@ class LLMClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
+            # Запрашиваем реальное количество токенов от провайдера
+            # Поддерживается OpenRouter, OpenAI, большинством совместимых API
+            "stream_options": {"include_usage": True},
         }
 
         # Метки для Prometheus
@@ -84,9 +93,19 @@ class LLMClient:
 
         stream_start = time.monotonic()
 
+        # Circuit breaker — проверяем перед запросом
+        from app.services.cache import cb_is_open, cb_increment_failures, cb_reset_failures, cb_open
+        if await cb_is_open(provider):
+            logger.warning(f"Circuit breaker OPEN for provider {provider}, request blocked")
+            raise httpx.ConnectError(f"Circuit breaker open for {provider}")
+
         for attempt in range(_MAX_RETRIES):
             tokens_yielded = False
             first_token_recorded = False
+            actual_input_tokens: int | None = None
+            actual_output_tokens: int | None = None
+            fallback_output_chars = 0
+
             try:
                 async with self._stream_client.stream(
                     "POST",
@@ -103,7 +122,17 @@ class LLMClient:
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = chunk["choices"][0]["delta"]
+
+                            # Захватываем реальное usage (приходит в последнем чанке)
+                            if chunk.get("usage"):
+                                usage = chunk["usage"]
+                                actual_input_tokens = usage.get("prompt_tokens")
+                                actual_output_tokens = usage.get("completion_tokens")
+
+                            choices = chunk.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0]["delta"]
                             content = delta.get("content", "")
                             if content:
                                 if not first_token_recorded:
@@ -114,12 +143,26 @@ class LLMClient:
                                     ).observe(time.monotonic() - stream_start)
                                     first_token_recorded = True
                                 tokens_yielded = True
+                                fallback_output_chars += len(content)
                                 llm_tokens_total.labels(model=route.model).inc(
                                     max(1, len(content) // 4)
                                 )
                                 yield content
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+
+                # Заполняем usage_out реальными токенами или fallback-оценкой
+                if usage_out is not None:
+                    if actual_input_tokens is not None and actual_output_tokens is not None:
+                        usage_out["input_tokens"] = actual_input_tokens
+                        usage_out["output_tokens"] = actual_output_tokens
+                        usage_out["source"] = "api"
+                    else:
+                        # Fallback: оцениваем по символам
+                        input_chars = sum(len(str(m.get("content", "") or "")) for m in messages)
+                        usage_out["input_tokens"] = max(1, input_chars // 4)
+                        usage_out["output_tokens"] = max(1, fallback_output_chars // 4)
+                        usage_out["source"] = "estimated"
 
                 llm_requests_total.labels(
                     provider=provider, model=route.model,
@@ -128,6 +171,9 @@ class LLMClient:
                 llm_stream_duration_seconds.labels(
                     provider=provider, model=route.model,
                 ).observe(time.monotonic() - stream_start)
+
+                # Circuit breaker — сбрасываем счётчик ошибок при успехе
+                await cb_reset_failures(provider)
                 return  # успешно завершили стрим
 
             except _RETRY_ERRORS as e:
@@ -136,6 +182,14 @@ class LLMClient:
                         provider=provider, model=route.model,
                         task_type=task_label, status="error",
                     ).inc()
+                    # Circuit breaker — фиксируем ошибку
+                    failures = await cb_increment_failures(provider, settings.CIRCUIT_BREAKER_COOLDOWN_SECONDS)
+                    if failures >= settings.CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+                        await cb_open(provider, settings.CIRCUIT_BREAKER_COOLDOWN_SECONDS)
+                        logger.error(
+                            f"Circuit breaker OPENED for {provider} after {failures} failures, "
+                            f"cooldown {settings.CIRCUIT_BREAKER_COOLDOWN_SECONDS}s"
+                        )
                     raise
                 wait = _BACKOFF_BASE * (2 ** attempt)
                 logger.warning(
@@ -150,6 +204,14 @@ class LLMClient:
                         provider=provider, model=route.model,
                         task_type=task_label, status="error",
                     ).inc()
+                    # Circuit breaker — только для 5xx ошибок
+                    if e.response.status_code >= 500:
+                        failures = await cb_increment_failures(provider, settings.CIRCUIT_BREAKER_COOLDOWN_SECONDS)
+                        if failures >= settings.CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+                            await cb_open(provider, settings.CIRCUIT_BREAKER_COOLDOWN_SECONDS)
+                            logger.error(
+                                f"Circuit breaker OPENED for {provider} (HTTP {e.response.status_code})"
+                            )
                     raise
                 if e.response.status_code not in _RETRY_STATUSES:
                     llm_requests_total.labels(
