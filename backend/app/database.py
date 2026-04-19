@@ -38,7 +38,7 @@ async def init_db():
     Если Alembic не настроен или что-то пошло не так — fallback на create_all,
     чтобы приложение всегда запустилось.
     """
-    from app.models import user, chat, workspace  # noqa — регистрируем модели
+    from app.models import user, chat, workspace, organization  # noqa — регистрируем модели
 
     try:
         import asyncio
@@ -77,6 +77,44 @@ async def init_db():
                 revoked_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS ix_refresh_token_blacklist_jti ON refresh_token_blacklist(jti)",
+            # Биллинг
+            "CREATE TYPE IF NOT EXISTS orgstatus AS ENUM ('active', 'suspended', 'trial')",
+            """CREATE TABLE IF NOT EXISTS organizations (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) UNIQUE NOT NULL,
+                director_name VARCHAR(255) NOT NULL,
+                email VARCHAR(255),
+                phone VARCHAR(50),
+                notes TEXT,
+                employee_count INTEGER DEFAULT 0,
+                balance NUMERIC(12,6) DEFAULT 0,
+                status orgstatus DEFAULT 'trial',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL",
+            "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check",
+            """CREATE TABLE IF NOT EXISTS organization_top_ups (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+                amount NUMERIC(12,2) NOT NULL,
+                comment VARCHAR(500),
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS usage_logs (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                model VARCHAR(100) NOT NULL,
+                task_type VARCHAR(50) NOT NULL,
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cost_rub NUMERIC(12,6) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_usage_logs_org_id ON usage_logs(organization_id)",
+            "CREATE INDEX IF NOT EXISTS ix_usage_logs_created_at ON usage_logs(created_at)",
         ]
         async with engine.begin() as conn:
             for sql in _manual_migrations:

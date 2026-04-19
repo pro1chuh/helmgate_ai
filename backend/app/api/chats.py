@@ -405,6 +405,14 @@ async def send_message(
     # Rate limiting — 20 запросов/минуту на пользователя
     check_rate_limit(current_user.id)
 
+    # Проверяем баланс организации
+    from app.services.billing import check_balance
+    if not await check_balance(current_user.organization_id, db):
+        raise HTTPException(
+            status_code=402,
+            detail="Баланс организации исчерпан. Обратитесь к администратору для пополнения.",
+        )
+
     # Проверяем что чат принадлежит пользователю
     result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
@@ -559,6 +567,21 @@ async def send_message(
         db.add(assistant_msg)
         await db.commit()
 
+        # Биллинг — логируем и списываем с баланса организации
+        if current_user.organization_id:
+            input_tokens = max(1, sum(len(m.get("content", "") or "") // 4 for m in llm_messages))
+            output_tokens = max(1, len(full_content) // 4)
+            background_tasks.add_task(
+                _billing_background,
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                model=route_result.model,
+                task_type=route_result.task_type.value,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                db_url=settings.DATABASE_URL,
+            )
+
         # Фоновое извлечение фактов о пользователе
         background_tasks.add_task(
             _extract_facts_background,
@@ -579,6 +602,26 @@ async def send_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def _billing_background(
+    organization_id: int,
+    user_id: int,
+    model: str,
+    task_type: str,
+    input_tokens: int,
+    output_tokens: int,
+    db_url: str,
+) -> None:
+    """Фоновая задача: списывает стоимость запроса с баланса организации."""
+    from app.services.billing import log_and_deduct
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+    engine = create_async_engine(db_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        await log_and_deduct(organization_id, user_id, model, task_type, input_tokens, output_tokens, session)
+    await engine.dispose()
 
 
 async def _extract_facts_background(

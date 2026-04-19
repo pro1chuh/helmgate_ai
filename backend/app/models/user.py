@@ -8,8 +8,9 @@ from sqlalchemy.sql import func
 
 
 class UserRole(str, enum.Enum):
-    admin = "admin"
-    user = "user"
+    superadmin = "superadmin"  # владельцы Helm (Anatoly + Dmitry)
+    admin = "admin"            # администратор компании-клиента
+    user = "user"              # обычный сотрудник
 
 
 class User(Base):
@@ -21,10 +22,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     chats: Mapped[list["Chat"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa
     facts: Mapped[list["UserFact"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa
+    organization: Mapped["Organization | None"] = relationship(back_populates="members")  # noqa
 
 
 class UserFact(Base):

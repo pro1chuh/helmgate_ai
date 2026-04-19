@@ -158,6 +158,18 @@ GET    /api/admin/users                  -- только admin
 PATCH  /api/admin/users/{id}
 GET    /api/admin/stats
 
+GET    /api/superadmin/stats                          -- только superadmin
+GET    /api/superadmin/organizations
+POST   /api/superadmin/organizations
+GET    /api/superadmin/organizations/{id}             -- детали + статистика
+PATCH  /api/superadmin/organizations/{id}
+DELETE /api/superadmin/organizations/{id}
+POST   /api/superadmin/organizations/{id}/topup       -- пополнить баланс
+GET    /api/superadmin/organizations/{id}/topups      -- история пополнений
+GET    /api/superadmin/organizations/{id}/usage       -- история запросов
+GET    /api/superadmin/organizations/{id}/users
+POST   /api/superadmin/organizations/{id}/invite      -- создать пользователя
+
 GET    /api/health
 GET    /api/health/detailed              -- статус + latency провайдера
 GET    /api/metrics                      -- Prometheus scrape endpoint
