@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_db
-from app.api import auth, chats, files, memory, profile, admin, workspaces
+from app.api import auth, chats, files, memory, profile, admin, workspaces, images
 from app.config import get_settings
 from app.core.logging_config import setup_logging
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -49,6 +49,7 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
+app.include_router(images.router, prefix="/api")
 
 # Prometheus — HTTP-метрики автоматически (latency, status codes, routes)
 # Endpoint: GET /api/metrics — закрыть nginx-ом от публичного доступа в prod

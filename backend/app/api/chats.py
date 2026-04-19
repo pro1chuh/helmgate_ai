@@ -503,30 +503,48 @@ async def send_message(
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
-        # Стримим токены с таймаутом 90 секунд на всю генерацию
         llm_error = None
-        try:
-            async def _stream():
-                async for token in llm_client.stream_chat(
-                    route=route_result,
-                    messages=llm_messages,
-                ):
-                    full_response.append(token)
-                    chunk = {"type": "token", "content": token}
-                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
-            async with asyncio.timeout(90):
-                async for sse_chunk in _stream():
-                    yield sse_chunk
+        # --- IMAGE GEN: одиночный запрос вместо стрима ---
+        if route_result.task_type == TaskType.IMAGE_GEN:
+            try:
+                async with asyncio.timeout(120):
+                    image_url = await llm_client.generate_image(route_result, body.content)
+                full_response.append(image_url)
+                yield f"data: {json.dumps({'type': 'image', 'url': image_url}, ensure_ascii=False)}\n\n"
+            except TimeoutError:
+                llm_error = "Превышено время генерации изображения (120 сек)"
+                logger.error(f"Image gen timeout for chat {chat_id}")
+                yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                llm_error = str(e)
+                logger.error(f"Image gen error: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
 
-        except TimeoutError:
-            llm_error = "Превышено время ожидания ответа (90 сек)"
-            logger.error(f"LLM generation timeout for chat {chat_id}")
-            yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            llm_error = str(e)
-            logger.error(f"LLM streaming error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
+        else:
+            # Стримим токены с таймаутом 90 секунд на всю генерацию
+            try:
+                async def _stream():
+                    async for token in llm_client.stream_chat(
+                        route=route_result,
+                        messages=llm_messages,
+                    ):
+                        full_response.append(token)
+                        chunk = {"type": "token", "content": token}
+                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+                async with asyncio.timeout(90):
+                    async for sse_chunk in _stream():
+                        yield sse_chunk
+
+            except TimeoutError:
+                llm_error = "Превышено время ожидания ответа (90 сек)"
+                logger.error(f"LLM generation timeout for chat {chat_id}")
+                yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                llm_error = str(e)
+                logger.error(f"LLM streaming error: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
 
         # Сохраняем полный ответ ассистента в БД
         full_content = "".join(full_response)

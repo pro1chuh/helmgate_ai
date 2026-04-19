@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # Vision — анализ изображений
     CLOUD_MODEL_VISION: str = "meta-llama/llama-3.2-90b-vision-instruct"
 
+    # Image generation — FLUX 1.1 Pro (можно поменять на любую из 353 моделей)
+    CLOUD_MODEL_IMAGE_GEN: str = "black-forest-labs/flux-1.1-pro"
+
     # ASR — через Groq (OpenRouter не поддерживает)
     CLOUD_MODEL_ASR: str = "whisper-large-v3-turbo"
 

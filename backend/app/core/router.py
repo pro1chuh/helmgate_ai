@@ -192,7 +192,7 @@ def route(
     if any(t in msg for t in IMAGE_GEN_TRIGGERS):
         if is_local:
             return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "image gen → fallback text (local)")
-        return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "image gen → fallback llama")
+        return _openrouter(settings.CLOUD_MODEL_IMAGE_GEN, TaskType.IMAGE_GEN, "image gen → flux-1.1-pro")
 
     if any(t in msg for t in CODE_TRIGGERS):
         if is_local:

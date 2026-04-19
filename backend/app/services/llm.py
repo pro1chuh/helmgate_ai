@@ -182,7 +182,9 @@ class LLMClient:
 
     async def generate_image(self, route: RouteResult, prompt: str) -> str:
         """
-        Генерация изображения. Возвращает URL или base64.
+        Генерация изображения через /images/generations.
+        Возвращает URL картинки (или data-URI если провайдер вернул base64).
+        Совместим с routerai.ru / OpenRouter / DALL-E.
         """
         payload = {
             "model": route.model,
@@ -191,14 +193,40 @@ class LLMClient:
             "size": "1024x1024",
             "response_format": "url",
         }
-        response = await self._client.post(
-            f"{route.base_url}/images/generations",
-            headers=self._headers(route.api_key),
-            json=payload,
-            timeout=180.0,
-        )
-        response.raise_for_status()
-        return response.json()["data"][0]["url"]
+        provider = route.base_url.split("//")[-1].split("/")[0]
+        t0 = time.monotonic()
+
+        try:
+            response = await self._client.post(
+                f"{route.base_url}/images/generations",
+                headers=self._headers(route.api_key),
+                json=payload,
+                timeout=180.0,
+            )
+            response.raise_for_status()
+            data = response.json()["data"][0]
+
+            llm_requests_total.labels(
+                provider=provider, model=route.model,
+                task_type="image_gen", status="ok",
+            ).inc()
+            llm_stream_duration_seconds.labels(
+                provider=provider, model=route.model,
+            ).observe(time.monotonic() - t0)
+
+            # Провайдер может вернуть url или b64_json
+            if "url" in data:
+                return data["url"]
+            if "b64_json" in data:
+                return f"data:image/png;base64,{data['b64_json']}"
+            raise ValueError(f"Unexpected image response format: {list(data.keys())}")
+
+        except Exception:
+            llm_requests_total.labels(
+                provider=provider, model=route.model,
+                task_type="image_gen", status="error",
+            ).inc()
+            raise
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """
