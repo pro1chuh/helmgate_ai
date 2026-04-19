@@ -6,11 +6,23 @@ LLM-клиент с поддержкой нескольких провайдер
 нового httpx.AsyncClient на каждый запрос. Это экономит TLS handshake
 на каждом обращении к routerai.ru (~50-150ms).
 """
+import asyncio
 import httpx
 import json
+import logging
 from typing import AsyncIterator
 from app.core.router import RouteResult, TaskType
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Статус-коды при которых имеет смысл повторить запрос
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+# Сетевые ошибки при которых повторяем
+_RETRY_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError)
+# Количество попыток и базовая задержка
+_MAX_RETRIES = 5
+_BACKOFF_BASE = 1.0  # секунды: 1, 2, 4, 8 — между попытками
 
 settings = get_settings()
 
@@ -46,6 +58,10 @@ class LLMClient:
         """
         Стримит ответ от провайдера токен за токеном.
         Работает одинаково для NVIDIA NIM, Groq и Ollama.
+
+        Retry: до 5 попыток с exponential backoff (1s, 2s, 4s, 8s).
+        Если токены уже начали идти — повтор не делается (нельзя дублировать ответ).
+        Повторяем при: сетевых ошибках и HTTP 429/500/502/503/504.
         """
         payload = {
             "model": route.model,
@@ -55,27 +71,54 @@ class LLMClient:
             "stream": True,
         }
 
-        async with self._stream_client.stream(
-            "POST",
-            f"{route.base_url}/chat/completions",
-            headers=self._headers(route.api_key),
-            json=payload,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:]
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                    delta = chunk["choices"][0]["delta"]
-                    content = delta.get("content", "")
-                    if content:
-                        yield content
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
+        for attempt in range(_MAX_RETRIES):
+            tokens_yielded = False
+            try:
+                async with self._stream_client.stream(
+                    "POST",
+                    f"{route.base_url}/chat/completions",
+                    headers=self._headers(route.api_key),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0]["delta"]
+                            content = delta.get("content", "")
+                            if content:
+                                tokens_yielded = True
+                                yield content
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                return  # успешно завершили стрим
+
+            except _RETRY_ERRORS as e:
+                if tokens_yielded or attempt == _MAX_RETRIES - 1:
+                    raise
+                wait = _BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    f"stream_chat attempt {attempt + 1}/{_MAX_RETRIES} failed "
+                    f"({type(e).__name__}: {e}), retry in {wait:.0f}s"
+                )
+                await asyncio.sleep(wait)
+
+            except httpx.HTTPStatusError as e:
+                if tokens_yielded or attempt == _MAX_RETRIES - 1:
+                    raise
+                if e.response.status_code not in _RETRY_STATUSES:
+                    raise
+                wait = _BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    f"stream_chat attempt {attempt + 1}/{_MAX_RETRIES} failed "
+                    f"(HTTP {e.response.status_code}), retry in {wait:.0f}s"
+                )
+                await asyncio.sleep(wait)
 
     async def transcribe(self, route: RouteResult, audio_path: str) -> str:
         """
