@@ -31,7 +31,7 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    from app.models import user, chat  # noqa — ensure models are registered
+    from app.models import user, chat, workspace  # noqa — ensure models are registered
     from sqlalchemy.exc import ProgrammingError, IntegrityError
     try:
         async with engine.begin() as conn:
@@ -43,6 +43,7 @@ async def init_db():
     # Добавляем новые колонки если их нет (вместо Alembic-миграций)
     migrations = [
         "ALTER TABLE chats ADD COLUMN IF NOT EXISTS system_prompt TEXT",
+        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_db
-from app.api import auth, chats, files, memory, profile, admin
+from app.api import auth, chats, files, memory, profile, admin, workspaces
 from app.config import get_settings
 import os
 
@@ -44,6 +44,7 @@ app.include_router(files.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(workspaces.router, prefix="/api")
 
 
 @app.get("/api/health")

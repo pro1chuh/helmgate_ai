@@ -3,9 +3,10 @@
 Стриминг через Server-Sent Events.
 """
 import base64
+import io
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -223,6 +224,54 @@ async def update_chat(
     return chat
 
 
+@router.get("/search", response_model=PagedResponse[ChatOut])
+async def search_chats(
+    q: str,
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Полнотекстовый поиск по названиям чатов и содержимому сообщений.
+    Использует PostgreSQL ILIKE для простого и надёжного поиска.
+    """
+    from sqlalchemy import func as sqlfunc, or_
+    limit = min(max(limit, 1), 100)
+    offset = (page - 1) * limit
+    q_pattern = f"%{q}%"
+
+    # Находим chat_id где есть совпадение в сообщениях
+    msg_subq = (
+        select(Message.chat_id)
+        .where(Message.content.ilike(q_pattern))
+        .scalar_subquery()
+    )
+
+    base_filter = (
+        Chat.user_id == current_user.id,
+        or_(
+            Chat.title.ilike(q_pattern),
+            Chat.id.in_(msg_subq),
+        ),
+    )
+
+    count_result = await db.execute(
+        select(sqlfunc.count()).select_from(Chat).where(*base_filter)
+    )
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(Chat)
+        .where(*base_filter)
+        .order_by(Chat.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    items = list(result.scalars().all())
+    return PagedResponse(items=items, total=total, page=page, limit=limit, has_more=(offset + len(items)) < total)
+
+
 @router.delete("/{chat_id}", status_code=204)
 async def delete_chat(
     chat_id: int,
@@ -271,6 +320,76 @@ async def get_messages(
     )
     items = list(result.scalars().all())
     return PagedResponse(items=items, total=total, page=page, limit=limit, has_more=(offset + len(items)) < total)
+
+
+@router.get("/{chat_id}/export")
+async def export_chat(
+    chat_id: int,
+    format: str = Query(default="md", pattern="^(md|pdf)$"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Экспорт чата.
+    format=md  — Markdown (text/markdown)
+    format=pdf — PDF (application/pdf)
+    """
+    result = await db.execute(
+        select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(
+        select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
+    )
+    messages = result.scalars().all()
+
+    if format == "md":
+        lines = [f"# {chat.title}\n"]
+        for m in messages:
+            role_label = "**Пользователь**" if m.role == "user" else f"**Helm** _{m.model_used or ''}_"
+            lines.append(f"### {role_label}\n{m.content}\n")
+        content = "\n".join(lines)
+        filename = f"chat_{chat_id}.md"
+        return Response(
+            content=content.encode("utf-8"),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # PDF
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise HTTPException(status_code=501, detail="PDF export not available: fpdf2 not installed")
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    title_safe = chat.title.encode("latin-1", "replace").decode("latin-1")
+    pdf.cell(0, 10, title_safe, ln=True)
+    pdf.ln(4)
+
+    for m in messages:
+        pdf.set_font("Helvetica", "B", 10)
+        role_label = "Пользователь:" if m.role == "user" else f"Helm ({m.model_used or 'AI'}):"
+        label_safe = role_label.encode("latin-1", "replace").decode("latin-1")
+        pdf.cell(0, 6, label_safe, ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        text_safe = m.content.encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 5, text_safe)
+        pdf.ln(3)
+
+    buf = io.BytesIO(pdf.output())
+    filename = f"chat_{chat_id}.pdf"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{chat_id}/messages")
