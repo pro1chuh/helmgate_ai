@@ -50,3 +50,49 @@ app.include_router(workspaces.router, prefix="/api")
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": settings.APP_NAME}
+
+
+@app.get("/api/health/detailed")
+async def health_detailed():
+    """
+    Расширенный healthcheck — проверяет доступность LLM-провайдера.
+    Используется для мониторинга и дашборда администратора.
+    """
+    import asyncio
+    from app.services.llm import llm_client
+
+    provider_status = "ok"
+    provider_latency_ms = None
+    provider_error = None
+
+    try:
+        import time
+        start = time.monotonic()
+        response = await asyncio.wait_for(
+            llm_client._client.get(
+                f"{settings.OPENROUTER_BASE_URL}/models",
+                timeout=5.0,
+            ),
+            timeout=6.0,
+        )
+        provider_latency_ms = round((time.monotonic() - start) * 1000)
+        if response.status_code >= 400:
+            provider_status = "degraded"
+            provider_error = f"HTTP {response.status_code}"
+    except Exception as e:
+        provider_status = "unavailable"
+        provider_error = str(e)
+
+    overall = "ok" if provider_status == "ok" else "degraded"
+
+    return {
+        "status": overall,
+        "app": settings.APP_NAME,
+        "provider": {
+            "name": "routerai",
+            "url": settings.OPENROUTER_BASE_URL,
+            "status": provider_status,
+            "latency_ms": provider_latency_ms,
+            "error": provider_error,
+        },
+    }

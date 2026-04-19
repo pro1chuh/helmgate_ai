@@ -2,6 +2,7 @@
 Чаты и сообщения — основной функционал продукта.
 Стриминг через Server-Sent Events.
 """
+import asyncio
 import base64
 import io
 import logging
@@ -18,6 +19,7 @@ from app.models.user import User, UserFact
 from app.core.auth import get_current_user
 from app.core.ai_router import route
 from app.core.router import TaskType
+from app.core.rate_limit import check_rate_limit
 from app.services.llm import llm_client
 from app.config import get_settings
 import json
@@ -400,6 +402,9 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Rate limiting — 20 запросов/минуту на пользователя
+    check_rate_limit(current_user.id)
+
     # Проверяем что чат принадлежит пользователю
     result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.user_id == current_user.id)
@@ -498,16 +503,26 @@ async def send_message(
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
-        # Стримим токены
+        # Стримим токены с таймаутом 90 секунд на всю генерацию
         llm_error = None
         try:
-            async for token in llm_client.stream_chat(
-                route=route_result,
-                messages=llm_messages,
-            ):
-                full_response.append(token)
-                chunk = {"type": "token", "content": token}
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            async def _stream():
+                async for token in llm_client.stream_chat(
+                    route=route_result,
+                    messages=llm_messages,
+                ):
+                    full_response.append(token)
+                    chunk = {"type": "token", "content": token}
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+            async with asyncio.timeout(90):
+                async for sse_chunk in _stream():
+                    yield sse_chunk
+
+        except TimeoutError:
+            llm_error = "Превышено время ожидания ответа (90 сек)"
+            logger.error(f"LLM generation timeout for chat {chat_id}")
+            yield f"data: {json.dumps({'type': 'error', 'detail': llm_error}, ensure_ascii=False)}\n\n"
         except Exception as e:
             llm_error = str(e)
             logger.error(f"LLM streaming error: {e}")
