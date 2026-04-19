@@ -895,10 +895,10 @@ async function loadFinances() {
     } else {
       const balClr = m.balance_usd === null ? 'text-white' : m.balance_usd > 10 ? 'text-green-400' : m.balance_usd > 2 ? 'text-yellow-400' : 'text-red-400';
       document.getElementById('masterCard').innerHTML = `
-        ${finCard('💸 Потрачено', m.usage_usd !== null ? '$' + m.usage_usd.toFixed(4) : '—', m.label || 'Основной ключ')}
-        ${finCard('💳 Остаток', m.balance_usd !== null ? '$' + m.balance_usd.toFixed(4) : m.limit_usd === null ? '∞' : '—', 'кредитов', balClr)}
-        ${finCard('🔒 Лимит', m.limit_usd !== null ? '$' + m.limit_usd : 'Без лимита', '')}
-        ${finCard('⚡ Rate limit', m.rate_limit ? m.rate_limit.requests + ' req/' + m.rate_limit.interval : '—', m.is_free_tier ? '🆓 Free tier' : '✅ Paid')}
+        ${finCard('💳 Баланс', m.balance_usd !== null ? '$' + m.balance_usd.toFixed(4) : '—', 'кредитов на счету', balClr)}
+        ${finCard('🔑 Ключ', m.label || 'Основной ключ', m.key_hint || '')}
+        ${finCard('🎯 Тариф', m.is_free_tier ? '🆓 Free tier' : '✅ Paid', '')}
+        ${finCard('⚡ Rate limit', m.rate_limit ? m.rate_limit.requests + ' req/' + m.rate_limit.interval : '—', 'запросов в интервал')}
       `;
     }
 
@@ -907,8 +907,7 @@ async function loadFinances() {
     document.getElementById('summaryCards').innerHTML = `
       ${finCard('🏢 Клиентов', s.clients_total, 'всего организаций')}
       ${finCard('🔑 С ключом', s.clients_with_key, 'настроен router.ai')}
-      ${finCard('📤 Расход клиентов', '$' + s.total_client_usage_usd.toFixed(4), 'суммарно потрачено')}
-      ${finCard('💰 Остаток клиентов', '$' + s.total_client_balance_usd.toFixed(4), 'суммарный остаток')}
+      ${finCard('💰 Баланс клиентов', '$' + s.total_client_balance_usd.toFixed(4), 'суммарный остаток')}
     `;
 
     // — Таблица клиентов —
@@ -925,10 +924,8 @@ async function loadFinances() {
               <th class="py-3 pl-4 pr-3 font-medium">Организация</th>
               <th class="py-3 pr-3 font-medium">Статус</th>
               <th class="py-3 pr-3 font-medium">Название ключа</th>
-              <th class="py-3 pr-3 font-medium text-right">Потрачено</th>
-              <th class="py-3 pr-3 font-medium text-right">Остаток</th>
-              <th class="py-3 pr-3 font-medium text-right">Лимит</th>
-              <th class="py-3 pr-4 font-medium text-right">Баланс Helm</th>
+              <th class="py-3 pr-3 font-medium text-right">Баланс router.ai</th>
+              <th class="py-3 pr-4 font-medium text-right">Баланс Helm ₽</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
@@ -936,17 +933,15 @@ async function loadFinances() {
               if (c.error) return `<tr>
                 <td class="py-3 pl-4 pr-3 font-medium text-white">${esc(c.company_name)}</td>
                 <td class="py-3 pr-3">${statusBadge(c.status)}</td>
-                <td class="py-3 pr-3 text-red-400 text-xs" colspan="4">❌ ${esc(c.error)}</td>
+                <td class="py-3 pr-3 text-red-400 text-xs" colspan="2">❌ ${esc(c.error)}</td>
                 <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
               </tr>`;
-              const balClr = c.balance_usd === null ? 'text-white' : c.balance_usd > 5 ? 'text-green-400' : c.balance_usd > 1 ? 'text-yellow-400' : 'text-red-400';
+              const balClr = c.balance_usd === null ? 'text-muted' : c.balance_usd > 5 ? 'text-green-400' : c.balance_usd > 1 ? 'text-yellow-400' : 'text-red-400';
               return `<tr>
                 <td class="py-3 pl-4 pr-3 font-medium text-white cursor-pointer hover:text-accent" onclick="openOrgPanel(${c.org_id})">${esc(c.company_name)}</td>
                 <td class="py-3 pr-3">${statusBadge(c.status)}</td>
                 <td class="py-3 pr-3 text-muted text-xs">${c.label ? esc(c.label) : '—'}</td>
-                <td class="py-3 pr-3 text-right text-white">${c.usage_usd !== null ? '$' + c.usage_usd.toFixed(4) : '—'}</td>
-                <td class="py-3 pr-3 text-right font-semibold ${balClr}">${c.balance_usd !== null ? '$' + c.balance_usd.toFixed(4) : c.limit_usd === null ? '∞' : '—'}</td>
-                <td class="py-3 pr-3 text-right text-muted">${c.limit_usd !== null ? '$' + c.limit_usd : '∞'}</td>
+                <td class="py-3 pr-3 text-right font-semibold ${balClr}">${c.balance_usd !== null ? '$' + c.balance_usd.toFixed(4) : '—'}</td>
                 <td class="py-3 pr-4 text-right text-muted">${fmt(c.helm_balance_rub)} ₽</td>
               </tr>`;
             }).join('')}
