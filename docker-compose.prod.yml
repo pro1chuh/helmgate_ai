@@ -1,0 +1,106 @@
+# Production compose — gunicorn + uvicorn workers, no --reload, resource limits
+#
+# Запуск:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Отличия от docker-compose.yml:
+#   - gunicorn с 4 uvicorn-воркерами (вместо uvicorn --reload)
+#   - restart: always (не unless-stopped)
+#   - resource limits (CPU + RAM)
+#   - нет ollama (cloud-режим по умолчанию)
+#   - Prometheus + Grafana для мониторинга
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: helm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helm}
+      POSTGRES_DB: helm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+  backend:
+    build: ./backend
+    restart: always
+    # 4 воркера = 4 * (2 * CPU + 1) — стандартная формула gunicorn
+    # Каждый воркер — полноценный uvicorn процесс с asyncio event loop
+    command: >
+      gunicorn app.main:app
+      --workers 4
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --keep-alive 5
+      --access-logfile -
+      --error-logfile -
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://helm:helm@db:5432/helm
+    volumes:
+      - uploads:/app/uploads
+      - chroma:/app/chroma
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    restart: always
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+volumes:
+  postgres_data:
+  uploads:
+  chroma:
+  prometheus_data:
+  grafana_data:

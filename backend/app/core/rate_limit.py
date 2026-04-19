@@ -6,6 +6,7 @@ import time
 import logging
 from collections import defaultdict, deque
 from fastapi import HTTPException
+from app.core.metrics import rate_limit_hits_total
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def check_rate_limit(user_id: int) -> None:
         oldest = bucket[0]
         retry_after = int(_WINDOW - (now - oldest)) + 1
         logger.warning(f"Rate limit exceeded for user {user_id}: {len(bucket)} req/min")
+        rate_limit_hits_total.inc()
         raise HTTPException(
             status_code=429,
             detail=f"Слишком много запросов. Повторите через {retry_after} секунд.",

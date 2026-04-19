@@ -4,21 +4,25 @@ from contextlib import asynccontextmanager
 from app.database import init_db
 from app.api import auth, chats, files, memory, profile, admin, workspaces
 from app.config import get_settings
+from app.core.logging_config import setup_logging
+from prometheus_fastapi_instrumentator import Instrumentator
+import logging
 import os
 
 settings = get_settings()
+setup_logging(debug=settings.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Создаём таблицы при старте
+    logger.info("Helm starting", extra={"mode": settings.DEPLOYMENT_MODE})
     await init_db()
-    # Создаём папку для загрузок
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     yield
-    # Graceful shutdown — закрываем пул соединений
     from app.services.llm import llm_client
     await llm_client.aclose()
+    logger.info("Helm stopped")
 
 
 app = FastAPI(
@@ -45,6 +49,14 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
+
+# Prometheus — HTTP-метрики автоматически (latency, status codes, routes)
+# Endpoint: GET /api/metrics — закрыть nginx-ом от публичного доступа в prod
+Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    excluded_handlers=["/api/metrics", "/api/health"],
+).instrument(app).expose(app, endpoint="/api/metrics", include_in_schema=False)
 
 
 @app.get("/api/health")

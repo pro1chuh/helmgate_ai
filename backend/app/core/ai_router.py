@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 from app.config import get_settings
+from app.core.metrics import classifier_cache_hits_total, classifier_quick_hits_total
 from app.core.router import (
     TaskType, RouteResult, Provider,
     IMAGE_MIME_TYPES, AUDIO_MIME_TYPES, DOCUMENT_MIME_TYPES,
@@ -123,12 +124,14 @@ async def _classify_cached(message: str) -> TaskType:
     # 1. Мгновенный pre-check — только для очевидного кода
     quick = _quick_classify(message)
     if quick is not None:
+        classifier_quick_hits_total.inc()
         return quick
 
     # 2. Кеш
     key = _cache_key(message)
     if key in _classify_cache:
         logger.debug(f"AI router cache hit: {key[:8]}")
+        classifier_cache_hits_total.inc()
         return _classify_cache[key]
 
     # 3. AI-классификатор

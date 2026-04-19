@@ -10,9 +10,16 @@ import asyncio
 import httpx
 import json
 import logging
+import time
 from typing import AsyncIterator
 from app.core.router import RouteResult, TaskType
 from app.config import get_settings
+from app.core.metrics import (
+    llm_requests_total,
+    llm_first_token_seconds,
+    llm_stream_duration_seconds,
+    llm_tokens_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +78,15 @@ class LLMClient:
             "stream": True,
         }
 
+        # Метки для Prometheus
+        provider = route.base_url.split("//")[-1].split("/")[0]  # hostname
+        task_label = route.task_type.value if hasattr(route, "task_type") else "unknown"
+
+        stream_start = time.monotonic()
+
         for attempt in range(_MAX_RETRIES):
             tokens_yielded = False
+            first_token_recorded = False
             try:
                 async with self._stream_client.stream(
                     "POST",
@@ -86,20 +100,42 @@ class LLMClient:
                             continue
                         data = line[6:]
                         if data == "[DONE]":
-                            return
+                            break
                         try:
                             chunk = json.loads(data)
                             delta = chunk["choices"][0]["delta"]
                             content = delta.get("content", "")
                             if content:
+                                if not first_token_recorded:
+                                    llm_first_token_seconds.labels(
+                                        provider=provider,
+                                        model=route.model,
+                                        task_type=task_label,
+                                    ).observe(time.monotonic() - stream_start)
+                                    first_token_recorded = True
                                 tokens_yielded = True
+                                llm_tokens_total.labels(model=route.model).inc(
+                                    max(1, len(content) // 4)
+                                )
                                 yield content
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+
+                llm_requests_total.labels(
+                    provider=provider, model=route.model,
+                    task_type=task_label, status="ok",
+                ).inc()
+                llm_stream_duration_seconds.labels(
+                    provider=provider, model=route.model,
+                ).observe(time.monotonic() - stream_start)
                 return  # успешно завершили стрим
 
             except _RETRY_ERRORS as e:
                 if tokens_yielded or attempt == _MAX_RETRIES - 1:
+                    llm_requests_total.labels(
+                        provider=provider, model=route.model,
+                        task_type=task_label, status="error",
+                    ).inc()
                     raise
                 wait = _BACKOFF_BASE * (2 ** attempt)
                 logger.warning(
@@ -110,8 +146,16 @@ class LLMClient:
 
             except httpx.HTTPStatusError as e:
                 if tokens_yielded or attempt == _MAX_RETRIES - 1:
+                    llm_requests_total.labels(
+                        provider=provider, model=route.model,
+                        task_type=task_label, status="error",
+                    ).inc()
                     raise
                 if e.response.status_code not in _RETRY_STATUSES:
+                    llm_requests_total.labels(
+                        provider=provider, model=route.model,
+                        task_type=task_label, status="error",
+                    ).inc()
                     raise
                 wait = _BACKOFF_BASE * (2 ** attempt)
                 logger.warning(

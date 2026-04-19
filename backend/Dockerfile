@@ -17,4 +17,6 @@ COPY . .
 
 EXPOSE 8000
 
+# Dev: uvicorn с 2 воркерами
+# Prod: gunicorn через docker-compose.prod.yml command override
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
