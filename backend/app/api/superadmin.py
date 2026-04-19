@@ -419,28 +419,31 @@ async def get_router_stats(
         raise HTTPException(status_code=422, detail="Organization has no router.ai API key configured")
 
     import httpx
+    from app.config import get_settings
+    cfg = get_settings()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
-                "https://openrouter.ai/api/v1/auth/key",
+                f"{cfg.OPENROUTER_BASE_URL.rstrip('/')}/credits",
                 headers={"Authorization": f"Bearer {org.openrouter_api_key}"},
             )
         if resp.status_code == 401:
             raise HTTPException(status_code=422, detail="Invalid router.ai API key")
         resp.raise_for_status()
-        data = resp.json().get("data", {})
+        raw = resp.json()
+        data = raw.get("data", raw)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"router.ai API error: {str(e)[:200]}")
 
-    usage = data.get("usage")       # кредиты потрачено (USD)
-    limit = data.get("limit")       # лимит (None = безлимит)
-    balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+    total_credits = data.get("total_credits")
+    total_usage   = data.get("total_usage")
+    balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
 
     return {
         "org_id": org_id,
         "label": data.get("label"),
-        "usage_usd": usage,
-        "limit_usd": limit,
+        "usage_usd": total_usage,
+        "limit_usd": total_credits,
         "balance_usd": balance,
         "is_free_tier": data.get("is_free_tier", False),
         "rate_limit": data.get("rate_limit"),
@@ -467,21 +470,25 @@ async def get_finances(
     from app.config import get_settings
     cfg = get_settings()
 
+    base_url = cfg.OPENROUTER_BASE_URL.rstrip("/")  # напр. https://routerai.ru/api/v1
+
     async def fetch_key(api_key: str) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
-                "https://openrouter.ai/api/v1/auth/key",
+                f"{base_url}/credits",
                 headers={"Authorization": f"Bearer {api_key}"},
             )
         resp.raise_for_status()
-        data = resp.json().get("data", {})
-        usage = data.get("usage")
-        limit = data.get("limit")
-        balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+        raw = resp.json()
+        data = raw.get("data", raw)  # routerai.ru возвращает { data: {...} } или напрямую
+        # /credits: total_credits (куплено), total_usage (потрачено)
+        total_credits = data.get("total_credits")
+        total_usage   = data.get("total_usage")
+        balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
         return {
             "label": data.get("label"),
-            "usage_usd": usage,
-            "limit_usd": limit,
+            "usage_usd": total_usage,
+            "limit_usd": total_credits,
             "balance_usd": balance,
             "is_free_tier": data.get("is_free_tier", False),
             "rate_limit": data.get("rate_limit"),
@@ -547,6 +554,8 @@ async def get_all_router_stats(
     """
     import httpx
     import asyncio
+    from app.config import get_settings
+    cfg = get_settings()
 
     result = await db.execute(
         select(Organization).where(Organization.openrouter_api_key.isnot(None))
@@ -557,20 +566,21 @@ async def get_all_router_stats(
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.get(
-                    "https://openrouter.ai/api/v1/auth/key",
+                    f"{cfg.OPENROUTER_BASE_URL.rstrip('/')}/credits",
                     headers={"Authorization": f"Bearer {org.openrouter_api_key}"},
                 )
             if resp.status_code != 200:
                 return {"org_id": org.id, "company_name": org.company_name, "error": f"HTTP {resp.status_code}"}
-            data = resp.json().get("data", {})
-            usage = data.get("usage")
-            limit = data.get("limit")
-            balance = round(limit - usage, 6) if limit is not None and usage is not None else None
+            raw = resp.json()
+            data = raw.get("data", raw)
+            total_credits = data.get("total_credits")
+            total_usage   = data.get("total_usage")
+            balance = round(total_credits - total_usage, 6) if total_credits is not None and total_usage is not None else None
             return {
                 "org_id": org.id,
                 "company_name": org.company_name,
                 "label": data.get("label"),
-                "usage_usd": usage,
+                "usage_usd": total_usage,
                 "limit_usd": limit,
                 "balance_usd": balance,
                 "is_free_tier": data.get("is_free_tier", False),
