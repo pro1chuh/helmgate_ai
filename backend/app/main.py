@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Helm starting", extra={"mode": settings.DEPLOYMENT_MODE})
+    logger.info("Helm starting")
     await init_db()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     # Инициализируем Redis (ошибка не прерывает запуск — Redis опциональный)

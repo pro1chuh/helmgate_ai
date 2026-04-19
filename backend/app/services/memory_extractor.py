@@ -2,7 +2,7 @@
 Авто-извлечение фактов о пользователе из диалога.
 
 После каждого ответа ассистента запускается в фоне:
-  - отправляет последний обмен в gemma-3-4b-it
+  - отправляет последний обмен в gemma-3-4b-it (через OpenRouter)
   - парсит факты (имя, должность, компания, предпочтения…)
   - сохраняет / обновляет UserFact в БД
 """
@@ -13,8 +13,6 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-EXTRACT_MODEL = "google/gemma-3-4b-it"
 
 EXTRACT_PROMPT = """\
 Проанализируй диалог и извлеки факты о пользователе.
@@ -36,12 +34,8 @@ async def extract_and_save(
     db_url: str,
 ) -> None:
     """Фоновая задача — извлекает и сохраняет факты о пользователе."""
-    # В local-режиме пропускаем (нет доступа к NVIDIA)
-    if settings.DEPLOYMENT_MODE == "local":
-        return
-
     payload = {
-        "model": EXTRACT_MODEL,
+        "model": settings.MODEL_MEMORY,
         "messages": [
             {
                 "role": "user",
@@ -59,8 +53,8 @@ async def extract_and_save(
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             response = await client.post(
-                f"{settings.NVIDIA_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {settings.NVIDIA_API_KEY}"},
+                f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
                 json=payload,
             )
             response.raise_for_status()
@@ -72,7 +66,6 @@ async def extract_and_save(
         if not facts:
             return
 
-        # Сохраняем в БД через отдельный engine (фоновый контекст)
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
         from sqlalchemy import select
         from app.models.user import UserFact

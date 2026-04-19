@@ -1,20 +1,18 @@
 """
-Helm AI-Router — использует маленькую LLM для классификации задачи.
+Helm AI-Router — классифицирует запрос через LLM и выбирает нужную модель.
 
 Преимущество перед keyword-matching:
-  "у меня не работает функция" → понимает что это CODE/TEXT, а не ищет слово "код"
-  "составь документацию к классу" → понимает контекст, а не ищет триггер
+  "у меня не работает функция" → понимает что это CODE, без слова "код"
+  "составь документацию к классу" → понимает контекст
   "разбери этот договор" → понимает что нужен анализ
 
 Модель-роутер: gemma-3-4b-it (4B, быстрая, дешёвая, ~200-400ms)
+Все запросы идут через OpenRouter.
 
 Оптимизации:
-  1. _quick_classify  — мгновенный pre-check по структурным сигналам (```, def, SELECT…).
-                        Срабатывает только на однозначных паттернах, короткие/обычные
-                        сообщения всегда идут через AI-классификатор.
-  2. _classify_cached — LRU-кеш на 500 записей по MD5 первых 120 символов.
-                        Повторные одинаковые запросы не гоняют gemma.
-  3. _classify        — использует общий httpx-пул из llm_client вместо нового клиента.
+  1. _quick_classify  — мгновенный pre-check по структурным сигналам (```, def, SELECT…)
+  2. _classify_cached — LRU-кеш на 500 записей по MD5 первых 120 символов
+  3. _classify        — использует общий httpx-пул из llm_client
 """
 import hashlib
 import json
@@ -22,60 +20,28 @@ import logging
 from app.config import get_settings
 from app.core.metrics import classifier_cache_hits_total, classifier_quick_hits_total
 from app.core.router import (
-    TaskType, RouteResult, Provider,
+    TaskType, RouteResult,
     IMAGE_MIME_TYPES, AUDIO_MIME_TYPES, DOCUMENT_MIME_TYPES,
-    _nvidia, _groq, _ollama, _openrouter,
+    _openrouter, _groq, task_to_route,
 )
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Модель для роутинга — маленькая и быстрая
-ROUTER_MODEL = "google/gemma-3-4b-it"
-
-ROUTER_PROMPT = """\
-Ты — классификатор задач. Проанализируй сообщение пользователя и верни ТОЛЬКО валидный JSON без пояснений.
-
-Типы задач:
-- "text": обычный вопрос, объяснение, перевод, резюме, общение, помощь с текстом
-- "code": написать/исправить/объяснить код, функцию, скрипт, класс, баг, SQL, regex, тесты, рефакторинг
-- "reasoning": глубокий анализ, сравнение вариантов, стратегия, прогноз, оценка рисков, бизнес-план, архитектурное решение
-- "image_gen": нарисовать, сгенерировать или создать изображение, иллюстрацию, логотип, схему
-
-Примеры:
-- "привет, как дела?" → {{"task": "text"}}
-- "что такое REST API?" → {{"task": "text"}}
-- "переведи на английский" → {{"task": "text"}}
-- "напиши функцию сортировки" → {{"task": "code"}}
-- "почему падает этот код?" → {{"task": "code"}}
-- "объясни этот скрипт" → {{"task": "code"}}
-- "напиши SQL-запрос для выборки" → {{"task": "code"}}
-- "сравни микросервисы и монолит" → {{"task": "reasoning"}}
-- "какие риски у этого решения?" → {{"task": "reasoning"}}
-- "составь стратегию выхода на рынок" → {{"task": "reasoning"}}
-- "нарисуй логотип стартапа" → {{"task": "image_gen"}}
-- "сгенерируй иллюстрацию для презентации" → {{"task": "image_gen"}}
-
-Формат ответа: {{"task": "text"}}
-
-Сообщение пользователя: {message}"""
-
 # ---------------------------------------------------------------------------
-# Quick pre-check: только недвусмысленные структурные сигналы.
-# Короткие и обычные сообщения сюда не попадают — идут через AI.
+# Quick pre-check: структурные сигналы кода
 # ---------------------------------------------------------------------------
 
-# Паттерны, которые встречаются ТОЛЬКО в коде, вне зависимости от контекста
 _CODE_STRUCTURAL = (
-    "```",          # блок кода
-    "def ",         # Python функция
-    "class ",       # класс (Python/JS/Java)
-    "import ",      # импорт
-    "SELECT ",      # SQL
+    "```",
+    "def ",
+    "class ",
+    "import ",
+    "SELECT ",
     "INSERT INTO",
     "UPDATE ",
-    "function ",    # JS/TS
-    "const ",       # JS/TS
+    "function ",
+    "const ",
     "async def ",
     "public static",
     "<?php",
@@ -87,19 +53,14 @@ def _quick_classify(message: str) -> TaskType | None:
     """
     Мгновенный pre-check по структурным сигналам кода.
     Возвращает TaskType.CODE если сигнал однозначен, иначе None.
-    Короткие обычные сообщения возвращают None и идут через AI-классификатор.
     """
-    # Проверяем только если сообщение достаточно содержательное
-    # (одно слово "class" или "import" — могут быть частью обычного вопроса)
     if len(message) < 10:
         return None
-
-    msg_upper = message[:300]  # смотрим только начало
+    msg_head = message[:300]
     for signal in _CODE_STRUCTURAL:
-        if signal in msg_upper:
+        if signal in msg_head:
             logger.debug(f"Quick classify → CODE (signal: {signal!r})")
             return TaskType.CODE
-
     return None
 
 
@@ -117,49 +78,64 @@ def _cache_key(message: str) -> str:
 
 async def _classify_cached(message: str) -> TaskType:
     """
-    1. Проверяет quick pre-check (структурные сигналы кода)
-    2. Проверяет кеш
-    3. Вызывает AI-классификатор если кеш промахнулся
+    1. Quick pre-check (структурные сигналы)
+    2. LRU-кеш
+    3. AI-классификатор (gemma-3-4b-it)
     """
-    # 1. Мгновенный pre-check — только для очевидного кода
     quick = _quick_classify(message)
     if quick is not None:
         classifier_quick_hits_total.inc()
         return quick
 
-    # 2. Кеш
     key = _cache_key(message)
     if key in _classify_cache:
         logger.debug(f"AI router cache hit: {key[:8]}")
         classifier_cache_hits_total.inc()
         return _classify_cache[key]
 
-    # 3. AI-классификатор
     result = await _classify(message)
 
-    # LRU eviction: удаляем самый старый элемент при переполнении
     if len(_classify_cache) >= _CACHE_MAX:
         del _classify_cache[next(iter(_classify_cache))]
-
     _classify_cache[key] = result
     return result
 
 
+ROUTER_PROMPT = """\
+Ты — классификатор задач. Проанализируй сообщение и верни ТОЛЬКО валидный JSON без пояснений.
+
+Типы задач:
+- "text": обычный вопрос, объяснение, перевод, резюме, общение, помощь с текстом
+- "code": написать/исправить/объяснить код, функцию, скрипт, класс, баг, SQL, regex, тесты, рефакторинг
+- "reasoning": глубокий анализ, сравнение вариантов, стратегия, прогноз, оценка рисков, бизнес-план
+- "image_gen": нарисовать, сгенерировать или создать изображение, иллюстрацию, логотип
+
+Примеры:
+- "привет" → {{"task": "text"}}
+- "напиши функцию сортировки" → {{"task": "code"}}
+- "почему падает этот код?" → {{"task": "code"}}
+- "сравни микросервисы и монолит" → {{"task": "reasoning"}}
+- "нарисуй логотип стартапа" → {{"task": "image_gen"}}
+
+Формат: {{"task": "text"}}
+
+Сообщение: {message}"""
+
+
 async def _classify(message: str) -> TaskType:
     """
-    Отправляет сообщение в gemma-3-4b-it и получает тип задачи.
-    Использует общий httpx-пул из llm_client (keep-alive).
+    Отправляет сообщение в gemma-3-4b-it через OpenRouter и получает тип задачи.
     При любой ошибке возвращает TEXT (безопасный дефолт).
     """
     from app.services.llm import llm_client
 
     payload = {
-        "model": ROUTER_MODEL,
+        "model": settings.MODEL_ROUTER,
         "messages": [
             {"role": "user", "content": ROUTER_PROMPT.format(message=message[:500])},
         ],
-        "temperature": 0.0,   # детерминированный вывод
-        "max_tokens": 20,     # нужен только {"task": "..."}
+        "temperature": 0.0,
+        "max_tokens": 20,
         "stream": False,
     }
 
@@ -172,12 +148,9 @@ async def _classify(message: str) -> TaskType:
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"].strip()
-
-        # Парсим JSON — gemma иногда добавляет ```json обёртку
         content = content.replace("```json", "").replace("```", "").strip()
         data = json.loads(content)
         task_str = data.get("task", "text").lower()
-
         return {
             "text": TaskType.TEXT,
             "code": TaskType.CODE,
@@ -190,22 +163,6 @@ async def _classify(message: str) -> TaskType:
         return TaskType.TEXT
 
 
-def _build_cloud_route(task: TaskType) -> RouteResult:
-    """Маппит тип задачи на модель в cloud-режиме (OpenRouter)."""
-    if task == TaskType.CODE:
-        return _openrouter(settings.CLOUD_MODEL_CODE, TaskType.CODE, "ai_router → qwen2.5-coder-32b")
-    if task == TaskType.REASONING:
-        return _openrouter(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "ai_router → deepseek-r1")
-    if task == TaskType.IMAGE_GEN:
-        return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.IMAGE_GEN, "ai_router → image_gen fallback llama")
-    return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "ai_router → llama-3.3-70b")
-
-
-def _build_local_route(task: TaskType) -> RouteResult:
-    """Маппит тип задачи на модель в local-режиме."""
-    return _ollama(settings.LOCAL_MODEL_TEXT, task, f"ai_router → ollama ({task.value})")
-
-
 async def route(
     message: str,
     file_mime_type: str | None = None,
@@ -213,48 +170,28 @@ async def route(
     manual_provider: str | None = None,
 ) -> RouteResult:
     """
-    Главная функция роутинга — async версия с AI-классификацией.
+    Главная функция роутинга (async, с AI-классификацией).
 
     Порядок приоритетов:
-      1. Ручной выбор пользователя
-      2. Тип прикреплённого файла (детерминированно)
-      3. AI-классификация текста
+      1. Ручной выбор модели
+      2. Тип прикреплённого файла (детерминированно, без AI)
+      3. AI-классификация текста (gemma-3-4b-it)
     """
-    is_local = settings.DEPLOYMENT_MODE == "local"
-
     # 1. Ручной выбор
     if manual_model:
-        if is_local or manual_provider == "ollama":
-            return _ollama(manual_model, TaskType.TEXT, "manual → ollama")
         if manual_provider == "groq":
-            return _groq(manual_model, TaskType.TEXT, "manual → groq")
-        if manual_provider == "openrouter":
-            return _openrouter(manual_model, TaskType.TEXT, "manual → openrouter")
-        return _nvidia(manual_model, TaskType.TEXT, "manual → nvidia")
+            return _groq(manual_model, TaskType.ASR, "manual → groq")
+        return _openrouter(manual_model, TaskType.TEXT, "manual → openrouter")
 
-    # 2. По типу файла (детерминированно, без AI)
+    # 2. По типу файла
     if file_mime_type:
         if file_mime_type in AUDIO_MIME_TYPES:
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_ASR, TaskType.ASR, f"audio → ollama whisper")
-            return _groq(settings.CLOUD_MODEL_ASR, TaskType.ASR, f"audio → groq whisper")
-
+            return _groq(settings.MODEL_ASR, TaskType.ASR, "audio → groq whisper")
         if file_mime_type in IMAGE_MIME_TYPES:
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_VISION, TaskType.VISION, f"image → ollama llava")
-            return _nvidia(settings.CLOUD_MODEL_VISION, TaskType.VISION, f"image → llama-3.2-90b-vision")
-
+            return _openrouter(settings.MODEL_VISION, TaskType.VISION, f"image → {settings.MODEL_VISION}")
         if file_mime_type in DOCUMENT_MIME_TYPES:
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.RAG, f"doc → ollama RAG")
-            return _nvidia(settings.CLOUD_MODEL_TEXT, TaskType.RAG, f"doc → glm-5.1 RAG")
+            return _openrouter(settings.MODEL_TEXT, TaskType.RAG, f"doc → RAG {settings.MODEL_TEXT}")
 
-    # 3. AI-классификация текста
-    if is_local:
-        # В local-режиме AI-роутер не вызываем (нет доступа к NVIDIA)
-        # Используем keyword-fallback из старого роутера
-        from app.core.router import route as keyword_route
-        return keyword_route(message, file_mime_type, manual_model, manual_provider)
-
+    # 3. AI-классификация
     task = await _classify_cached(message)
-    return _build_cloud_route(task)
+    return task_to_route(task)

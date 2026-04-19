@@ -65,7 +65,7 @@ class LLMClient:
     ) -> AsyncIterator[str]:
         """
         Стримит ответ от провайдера токен за токеном.
-        Работает одинаково для NVIDIA NIM, Groq и Ollama.
+        Работает с любым OpenAI-compatible API (OpenRouter, Groq).
 
         Retry: до 5 попыток с exponential backoff (1s, 2s, 4s, 8s).
         Если токены уже начали идти — повтор не делается (нельзя дублировать ответ).

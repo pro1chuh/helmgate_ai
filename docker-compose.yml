@@ -52,27 +52,8 @@ services:
     ports:
       - "3000:3000"
 
-  # Ollama — только для local/hybrid режима
-  # В cloud-режиме можно закомментировать чтобы сэкономить ресурсы
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    # Раскомментировать если есть NVIDIA GPU:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
 volumes:
   postgres_data:
   redis_data:
   uploads:
   chroma:
-  ollama_data:

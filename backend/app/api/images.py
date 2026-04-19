@@ -2,7 +2,7 @@
 Генерация изображений.
 
 POST /api/images/generate — принимает промпт, возвращает URL изображения.
-Модель по умолчанию: CLOUD_MODEL_IMAGE_GEN (black-forest-labs/flux-1.1-pro).
+Модель по умолчанию: MODEL_IMAGE_GEN из настроек (gemini-2.5-flash-image).
 Можно переопределить через поле model в теле запроса.
 """
 import logging
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from app.core.auth import get_current_user
 from app.models.user import User
 from app.config import get_settings
-from app.core.router import RouteResult, TaskType, Provider
+from app.core.router import RouteResult, TaskType, Provider, _openrouter
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -43,28 +43,14 @@ async def generate_image(
     - "логотип технологического стартапа, минимализм, синий градиент"
     - "офисное пространство будущего, фотореализм, 4K"
 
-    Модель по умолчанию задаётся в .env (CLOUD_MODEL_IMAGE_GEN).
+    Модель по умолчанию задаётся в .env (MODEL_IMAGE_GEN).
     Можно явно передать model — любую из 353 моделей на routerai.ru.
     """
-    if settings.DEPLOYMENT_MODE == "local":
-        raise HTTPException(
-            status_code=501,
-            detail="Image generation is not available in local mode. Switch to DEPLOYMENT_MODE=cloud.",
-        )
-
     if not body.prompt.strip():
         raise HTTPException(status_code=422, detail="Prompt cannot be empty")
 
-    model = body.model or settings.CLOUD_MODEL_IMAGE_GEN
-
-    route = RouteResult(
-        task_type=TaskType.IMAGE_GEN,
-        provider=Provider.OPENROUTER,
-        model=model,
-        base_url=settings.OPENROUTER_BASE_URL,
-        api_key=settings.OPENROUTER_API_KEY,
-        reason="direct image generation request",
-    )
+    model = body.model or settings.MODEL_IMAGE_GEN
+    route = _openrouter(model, TaskType.IMAGE_GEN, "direct image generation request")
 
     from app.services.llm import llm_client
 
