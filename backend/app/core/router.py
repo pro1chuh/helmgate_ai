@@ -1,16 +1,17 @@
 """
-Helm Auto-Router — определяет тип задачи, выбирает провайдера и модель.
+Helm Router — определяет тип задачи и выбирает модель через OpenRouter.
 
-Cloud режим:
-  Текст        → NVIDIA NIM / GLM-5.1
-  Reasoning    → NVIDIA NIM / DeepSeek V3.2
-  Код          → NVIDIA NIM / Qwen2.5-Coder-32B
-  Vision       → NVIDIA NIM / Llama-3.2-90B-Vision
-  ASR          → Groq / Whisper-large-v3-turbo
-  Embeddings   → NVIDIA NIM / nv-embedqa-e5-v5
+Все LLM-запросы идут через OpenRouter (routerai.ru).
+ASR — через Groq (единственный провайдер с audio endpoint).
 
-Local режим (air-gapped, 152-ФЗ):
-  Всё          → Ollama
+Типы задач:
+  TEXT      → llama-3.3-70b
+  CODE      → kat-coder-pro-v2
+  REASONING → gemini-2.5-pro
+  VISION    → grok-4.20 (vision)
+  ASR       → Groq Whisper
+  IMAGE_GEN → gemini-2.5-flash-image
+  RAG       → llama-3.3-70b (с контекстом документа)
 """
 from enum import Enum
 from dataclasses import dataclass
@@ -20,20 +21,18 @@ settings = get_settings()
 
 
 class TaskType(str, Enum):
-    TEXT = "text"           # Обычный текст — Llama-3.3-70B
-    CODE = "code"           # Код — Qwen2.5-Coder-32B
-    REASONING = "reasoning" # Тяжёлый анализ — GLM-5.1
-    VISION = "vision"       # Анализ изображений
-    ASR = "asr"             # Голос → текст
-    IMAGE_GEN = "image_gen" # Генерация изображений
-    RAG = "rag"             # Ответ по документу
+    TEXT = "text"
+    CODE = "code"
+    REASONING = "reasoning"
+    VISION = "vision"
+    ASR = "asr"
+    IMAGE_GEN = "image_gen"
+    RAG = "rag"
 
 
 class Provider(str, Enum):
-    NVIDIA = "nvidia"
-    GROQ = "groq"
-    OLLAMA = "ollama"
     OPENROUTER = "openrouter"
+    GROQ = "groq"
 
 
 @dataclass
@@ -47,40 +46,8 @@ class RouteResult:
 
 
 # -------------------------------------------------------
-# Триггеры для определения типа задачи
+# Mime-type наборы
 # -------------------------------------------------------
-
-REASONING_TRIGGERS = [
-    # RU
-    "проанализируй", "составь стратегию", "сравни", "оцени риски",
-    "дай прогноз", "обоснуй", "аргументируй", "разбери по шагам",
-    "составь план", "исследуй", "глубокий анализ", "детальный анализ",
-    # EN
-    "analyze", "compare", "evaluate", "strategize", "deep dive",
-    "step by step", "reason through", "pros and cons",
-]
-
-CODE_TRIGGERS = [
-    # RU
-    "напиши код", "напиши функцию", "напиши скрипт", "напиши класс",
-    "исправь баг", "исправь ошибку", "отладь", "задебаги",
-    "рефактор", "оптимизируй код", "покрой тестами", "напиши тест",
-    "sql запрос", "регулярное выражение", "regex",
-    # EN
-    "write code", "write a function", "write a script", "fix bug",
-    "debug", "refactor", "optimize code", "write tests", "unit test",
-    "sql query", "implement",
-]
-
-IMAGE_GEN_TRIGGERS = [
-    # RU
-    "нарисуй", "сгенерируй изображение", "создай картинку",
-    "нарисуй картинку", "покажи как выглядит", "изобрази",
-    "сделай иллюстрацию", "создай логотип",
-    # EN
-    "generate image", "draw", "create image", "visualize",
-    "create a logo", "illustrate",
-]
 
 IMAGE_MIME_TYPES = {
     "image/jpeg", "image/png", "image/gif",
@@ -103,13 +70,44 @@ DOCUMENT_MIME_TYPES = {
 
 
 # -------------------------------------------------------
-# Фабрики провайдеров
+# Триггеры для keyword-fallback (используется в batch и т.п.)
 # -------------------------------------------------------
 
-def _nvidia(model: str, task: TaskType, reason: str) -> RouteResult:
+REASONING_TRIGGERS = [
+    "проанализируй", "составь стратегию", "сравни", "оцени риски",
+    "дай прогноз", "обоснуй", "аргументируй", "разбери по шагам",
+    "составь план", "исследуй", "глубокий анализ", "детальный анализ",
+    "analyze", "compare", "evaluate", "strategize", "deep dive",
+    "step by step", "reason through", "pros and cons",
+]
+
+CODE_TRIGGERS = [
+    "напиши код", "напиши функцию", "напиши скрипт", "напиши класс",
+    "исправь баг", "исправь ошибку", "отладь", "задебаги",
+    "рефактор", "оптимизируй код", "покрой тестами", "напиши тест",
+    "sql запрос", "регулярное выражение", "regex",
+    "write code", "write a function", "write a script", "fix bug",
+    "debug", "refactor", "optimize code", "write tests", "unit test",
+    "sql query", "implement",
+]
+
+IMAGE_GEN_TRIGGERS = [
+    "нарисуй", "сгенерируй изображение", "создай картинку",
+    "нарисуй картинку", "покажи как выглядит", "изобрази",
+    "сделай иллюстрацию", "создай логотип",
+    "generate image", "draw", "create image", "visualize",
+    "create a logo", "illustrate",
+]
+
+
+# -------------------------------------------------------
+# Фабрики
+# -------------------------------------------------------
+
+def _openrouter(model: str, task: TaskType, reason: str) -> RouteResult:
     return RouteResult(
-        task_type=task, provider=Provider.NVIDIA, model=model,
-        base_url=settings.NVIDIA_BASE_URL, api_key=settings.NVIDIA_API_KEY,
+        task_type=task, provider=Provider.OPENROUTER, model=model,
+        base_url=settings.OPENROUTER_BASE_URL, api_key=settings.OPENROUTER_API_KEY,
         reason=reason,
     )
 
@@ -122,25 +120,23 @@ def _groq(model: str, task: TaskType, reason: str) -> RouteResult:
     )
 
 
-def _ollama(model: str, task: TaskType, reason: str) -> RouteResult:
-    return RouteResult(
-        task_type=task, provider=Provider.OLLAMA, model=model,
-        base_url=settings.OLLAMA_BASE_URL, api_key=settings.OLLAMA_API_KEY,
-        reason=reason,
-    )
-
-
-def _openrouter(model: str, task: TaskType, reason: str) -> RouteResult:
-    return RouteResult(
-        task_type=task, provider=Provider.OPENROUTER, model=model,
-        base_url=settings.OPENROUTER_BASE_URL, api_key=settings.OPENROUTER_API_KEY,
-        reason=reason,
-    )
-
-
 # -------------------------------------------------------
-# Основная функция роутинга
+# Роутинг по типу задачи
 # -------------------------------------------------------
+
+def task_to_route(task: TaskType) -> RouteResult:
+    """Маппит тип задачи на модель через OpenRouter."""
+    if task == TaskType.CODE:
+        return _openrouter(settings.MODEL_CODE, TaskType.CODE, f"code → {settings.MODEL_CODE}")
+    if task == TaskType.REASONING:
+        return _openrouter(settings.MODEL_REASONING, TaskType.REASONING, f"reasoning → {settings.MODEL_REASONING}")
+    if task == TaskType.IMAGE_GEN:
+        return _openrouter(settings.MODEL_IMAGE_GEN, TaskType.IMAGE_GEN, f"image_gen → {settings.MODEL_IMAGE_GEN}")
+    if task == TaskType.VISION:
+        return _openrouter(settings.MODEL_VISION, TaskType.VISION, f"vision → {settings.MODEL_VISION}")
+    # TEXT, RAG — llama
+    return _openrouter(settings.MODEL_TEXT, task, f"{task.value} → {settings.MODEL_TEXT}")
+
 
 def route(
     message: str,
@@ -149,69 +145,37 @@ def route(
     manual_provider: str | None = None,
 ) -> RouteResult:
     """
-    Определяет провайдера и модель для запроса.
-    Порядок приоритетов:
-      1. Ручной выбор пользователя
-      2. Тип прикреплённого файла
-      3. Триггерные слова в тексте
-      4. Дефолт — GLM-5.1
+    Синхронный роутер (keyword-matching) — используется в batch API и fallback.
+    Основной путь (чаты) использует async route() из ai_router.py.
     """
-    is_local = settings.DEPLOYMENT_MODE == "local"
-
-    # 1. Ручной выбор
+    # Ручной выбор модели
     if manual_model:
-        if is_local or manual_provider == "ollama":
-            return _ollama(manual_model, TaskType.TEXT, "manual → ollama")
         if manual_provider == "groq":
-            return _groq(manual_model, TaskType.TEXT, "manual → groq")
-        return _nvidia(manual_model, TaskType.TEXT, "manual → nvidia")
+            return _groq(manual_model, TaskType.ASR, "manual → groq")
+        return _openrouter(manual_model, TaskType.TEXT, "manual → openrouter")
 
-    # 2. По типу файла
+    # По типу файла
     if file_mime_type:
         if file_mime_type in AUDIO_MIME_TYPES:
-            reason = f"audio ({file_mime_type})"
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_ASR, TaskType.ASR, reason)
-            return _groq(settings.CLOUD_MODEL_ASR, TaskType.ASR, reason + " → groq whisper")
-
+            return _groq(settings.MODEL_ASR, TaskType.ASR, f"audio → groq whisper")
         if file_mime_type in IMAGE_MIME_TYPES:
-            reason = f"image ({file_mime_type})"
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_VISION, TaskType.VISION, reason)
-            return _openrouter(settings.CLOUD_MODEL_VISION, TaskType.VISION, reason + " → llama-3.2-90b-vision")
-
+            return _openrouter(settings.MODEL_VISION, TaskType.VISION, f"image → {settings.MODEL_VISION}")
         if file_mime_type in DOCUMENT_MIME_TYPES:
-            reason = f"document ({file_mime_type}) → RAG"
-            if is_local:
-                return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.RAG, reason)
-            return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.RAG, reason + " → llama-3.3-70b")
+            return _openrouter(settings.MODEL_TEXT, TaskType.RAG, f"doc → RAG {settings.MODEL_TEXT}")
 
-    # 3. По триггерам в тексте
+    # Keyword-триггеры
     msg = message.lower()
-
     if any(t in msg for t in IMAGE_GEN_TRIGGERS):
-        if is_local:
-            return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "image gen → fallback text (local)")
-        return _openrouter(settings.CLOUD_MODEL_IMAGE_GEN, TaskType.IMAGE_GEN, "image gen → flux-1.1-pro")
-
+        return _openrouter(settings.MODEL_IMAGE_GEN, TaskType.IMAGE_GEN, "keyword → image_gen")
     if any(t in msg for t in CODE_TRIGGERS):
-        if is_local:
-            return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.CODE, "code → ollama (local)")
-        return _openrouter(settings.CLOUD_MODEL_CODE, TaskType.CODE, "code → qwen2.5-coder-32b")
-
+        return _openrouter(settings.MODEL_CODE, TaskType.CODE, "keyword → code")
     if any(t in msg for t in REASONING_TRIGGERS):
-        if is_local:
-            return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.REASONING, "reasoning trigger → llama (local)")
-        return _openrouter(settings.CLOUD_MODEL_REASONING, TaskType.REASONING, "reasoning → deepseek-r1")
+        return _openrouter(settings.MODEL_REASONING, TaskType.REASONING, "keyword → reasoning")
 
-    # 4. Дефолт
-    if is_local:
-        return _ollama(settings.LOCAL_MODEL_TEXT, TaskType.TEXT, "default → llama3.2 (local)")
-    return _openrouter(settings.CLOUD_MODEL_TEXT, TaskType.TEXT, "default → llama-3.3-70b")
+    return _openrouter(settings.MODEL_TEXT, TaskType.TEXT, f"default → {settings.MODEL_TEXT}")
 
 
 def get_embedding_config() -> tuple[str, str, str]:
     """Возвращает (base_url, api_key, model) для embedding-модели."""
-    if settings.DEPLOYMENT_MODE == "local":
-        return settings.OLLAMA_BASE_URL, settings.OLLAMA_API_KEY, settings.LOCAL_MODEL_EMBEDDING
-    return settings.NVIDIA_BASE_URL, settings.NVIDIA_API_KEY, settings.CLOUD_MODEL_EMBEDDING
+    # Embeddings через OpenRouter (модели типа text-embedding-3-small)
+    return settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, "openai/text-embedding-3-small"

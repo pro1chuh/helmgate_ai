@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from functools import lru_cache
-from typing import Literal
 
 
 class Settings(BaseSettings):
@@ -19,61 +18,44 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # -------------------------------------------------------
-    # Deployment mode
-    # cloud → NVIDIA NIM + Groq
-    # local → Ollama only (air-gapped, 152-ФЗ)
-    # -------------------------------------------------------
-    DEPLOYMENT_MODE: Literal["cloud", "local"] = "cloud"
-
-    # -------------------------------------------------------
-    # Cloud providers
+    # Провайдеры (только cloud — через router.ai / OpenRouter)
     # -------------------------------------------------------
 
-    # NVIDIA NIM — LLM, Vision, Embeddings
-    NVIDIA_API_KEY: str = ""
-    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-
-    # Groq — ASR (Whisper)
+    # Groq — ASR (Whisper); OpenRouter не поддерживает audio endpoints
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
-    # OpenRouter — агрегатор всех моделей (fallback + ручной выбор)
+    # OpenRouter (routerai.ru) — все LLM, Vision, Image Gen
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 
     # -------------------------------------------------------
-    # Model mapping — cloud (OpenRouter)
+    # Модели (все через OpenRouter, кроме ASR)
     # -------------------------------------------------------
 
-    # Основная модель — текст, общение, документы
-    CLOUD_MODEL_TEXT: str = "meta-llama/llama-3.3-70b-instruct"
+    # Текст — общение, документы, RAG
+    MODEL_TEXT: str = "meta-llama/llama-3.3-70b-instruct"
 
-    # Код — KAT-Coder-Pro V2
-    CLOUD_MODEL_CODE: str = "kwaipilot/kat-coder-pro-v2"
+    # Код
+    MODEL_CODE: str = "kwaipilot/kat-coder-pro-v2"
 
-    # Тяжёлый reasoning — Gemini 2.5 Pro
-    CLOUD_MODEL_REASONING: str = "google/gemini-2.5-pro"
+    # Reasoning — глубокий анализ
+    MODEL_REASONING: str = "google/gemini-2.5-pro"
 
     # Vision — анализ изображений
-    CLOUD_MODEL_VISION: str = "x-ai/grok-4.20"
+    MODEL_VISION: str = "x-ai/grok-4.20"
 
-    # Image generation — Gemini 2.5 Flash Image (дефолт)
-    # Альтернативы: openai/gpt-5-image-mini
-    CLOUD_MODEL_IMAGE_GEN: str = "google/gemini-2.5-flash-image"
+    # Image generation
+    MODEL_IMAGE_GEN: str = "google/gemini-2.5-flash-image"
 
-    # ASR — через Groq (OpenRouter не поддерживает)
-    CLOUD_MODEL_ASR: str = "whisper-large-v3-turbo"
+    # ASR — через Groq
+    MODEL_ASR: str = "whisper-large-v3-turbo"
 
-    # Embeddings — локально через ONNX (не нужен API)
-    CLOUD_MODEL_EMBEDDING: str = "local/onnx"
+    # Классификатор запросов (маленькая быстрая модель)
+    MODEL_ROUTER: str = "google/gemma-3-4b-it"
 
-    # -------------------------------------------------------
-    # Model mapping — local (Ollama)
-    # -------------------------------------------------------
-    LOCAL_MODEL_TEXT: str = "llama3.2"
-    LOCAL_MODEL_VISION: str = "llava"
-    LOCAL_MODEL_ASR: str = "whisper"
-    LOCAL_MODEL_EMBEDDING: str = "nomic-embed-text"
+    # Извлечение фактов о пользователе (фоновая)
+    MODEL_MEMORY: str = "google/gemma-3-4b-it"
 
     # Files
     UPLOAD_DIR: str = "/app/uploads"
@@ -109,7 +91,7 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 3   # сбоев подряд для открытия
     CIRCUIT_BREAKER_COOLDOWN_SECONDS: int = 60   # секунд до retry
 
-    @field_validator("NVIDIA_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", mode="before")
+    @field_validator("GROQ_API_KEY", "OPENROUTER_API_KEY", mode="before")
     @classmethod
     def empty_string_allowed(cls, v):
         return v or ""

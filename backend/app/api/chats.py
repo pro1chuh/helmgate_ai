@@ -135,7 +135,7 @@ async def _get_document(file_id: int, user_id: int, db: AsyncSession) -> Documen
 def _build_vision_messages(messages: list[dict], image_path: str, mime_type: str) -> list[dict]:
     """
     Заменяет последнее user-сообщение на мультимодальный формат (текст + изображение).
-    Совместимо с OpenAI-compatible API (NVIDIA NIM, Ollama).
+    Совместимо с OpenAI-compatible Vision API.
     """
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
