@@ -44,6 +44,13 @@ async def init_db():
     migrations = [
         "ALTER TABLE chats ADD COLUMN IF NOT EXISTS system_prompt TEXT",
         "ALTER TABLE chats ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL",
+        """CREATE TABLE IF NOT EXISTS refresh_token_blacklist (
+            id SERIAL PRIMARY KEY,
+            jti VARCHAR(64) UNIQUE NOT NULL,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            revoked_at TIMESTAMP DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_refresh_token_blacklist_jti ON refresh_token_blacklist(jti)",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

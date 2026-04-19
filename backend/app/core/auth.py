@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -30,13 +31,31 @@ def create_access_token(user_id: int) -> str:
     )
 
 
-def create_refresh_token(user_id: int) -> str:
+def create_refresh_token(user_id: int) -> tuple[str, str]:
+    """Возвращает (token, jti) — jti нужен для blacklist при logout."""
+    jti = uuid.uuid4().hex
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    return jwt.encode(
-        {"sub": str(user_id), "exp": expire, "type": "refresh"},
+    token = jwt.encode(
+        {"sub": str(user_id), "exp": expire, "type": "refresh", "jti": jti},
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
+    return token, jti
+
+
+async def revoke_refresh_token(jti: str, user_id: int, db: AsyncSession) -> None:
+    """Добавляет jti в blacklist. Вызывается при logout и ротации токена."""
+    from app.models.user import RefreshTokenBlacklist
+    db.add(RefreshTokenBlacklist(jti=jti, user_id=user_id))
+    await db.commit()
+
+
+async def is_token_revoked(jti: str, db: AsyncSession) -> bool:
+    from app.models.user import RefreshTokenBlacklist
+    result = await db.execute(
+        select(RefreshTokenBlacklist).where(RefreshTokenBlacklist.jti == jti)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def get_current_user(

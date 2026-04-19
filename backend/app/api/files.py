@@ -4,6 +4,7 @@
 import os
 import uuid
 import aiofiles
+from sqlalchemy import func as sqlfunc
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +18,9 @@ from app.config import get_settings
 
 settings = get_settings()
 router = APIRouter(prefix="/files", tags=["files"])
+
+MAX_FILES_PER_USER = 50
+MAX_TOTAL_SIZE_MB = 500
 
 ALLOWED_MIME_TYPES = {
     # Документы
@@ -94,16 +98,54 @@ async def upload_file(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Проверяем тип файла
-    mime_type = file.content_type or "application/octet-stream"
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=415, detail=f"File type not supported: {mime_type}")
-
-    # Проверяем размер
+    # Читаем содержимое
     contents = await file.read()
     size = len(contents)
+
+    # 1. Валидация MIME по реальному содержимому (magic bytes), не по заголовку
+    try:
+        import filetype as ft
+        detected = ft.guess(contents)
+        real_mime = detected.mime if detected else None
+    except Exception:
+        real_mime = None
+
+    # Берём реальный MIME если определился, иначе доверяем заголовку (для text/*)
+    mime_type = real_mime or file.content_type or "application/octet-stream"
+
+    if mime_type not in ALLOWED_MIME_TYPES:
+        # Для текстовых файлов filetype не определяет — доверяем заголовку
+        header_mime = file.content_type or ""
+        if header_mime.startswith("text/") and header_mime in ALLOWED_MIME_TYPES:
+            mime_type = header_mime
+        else:
+            raise HTTPException(
+                status_code=415,
+                detail=f"File type not supported: {mime_type}",
+            )
+
+    # 2. Проверяем размер файла
     if size > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"File too large (max {settings.MAX_FILE_SIZE_MB}MB)")
+
+    # 3. Лимит количества файлов на пользователя
+    count_result = await db.execute(
+        select(sqlfunc.count()).select_from(Document).where(Document.user_id == current_user.id)
+    )
+    if (count_result.scalar() or 0) >= MAX_FILES_PER_USER:
+        raise HTTPException(status_code=400, detail=f"File limit reached ({MAX_FILES_PER_USER} files per user)")
+
+    # 4. Лимит суммарного размера на пользователя
+    size_result = await db.execute(
+        select(sqlfunc.sum(Document.size_bytes)).where(Document.user_id == current_user.id)
+    )
+    total_used = size_result.scalar() or 0
+    if total_used + size > MAX_TOTAL_SIZE_MB * 1024 * 1024:
+        used_mb = round(total_used / 1024 / 1024, 1)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Storage limit reached ({used_mb}/{MAX_TOTAL_SIZE_MB} MB used)",
+        )
 
     # Сохраняем на диск
     ext = os.path.splitext(file.filename or "")[1]

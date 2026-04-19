@@ -38,3 +38,16 @@ class UserFact(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="facts")
+
+
+class RefreshTokenBlacklist(Base):
+    """
+    Blacklist отозванных refresh-токенов.
+    При logout или ротации SECRET_KEY старые jti сюда попадают и больше не принимаются.
+    """
+    __tablename__ = "refresh_token_blacklist"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
