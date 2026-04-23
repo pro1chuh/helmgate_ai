@@ -1,0 +1,11 @@
+1. Build local images first:
+   docker build -t {{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }} ./backend
+   docker build -t {{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }} ./frontend-demo
+
+2. Make sure Docker Desktop Kubernetes is enabled.
+
+3. Install or upgrade:
+   helm upgrade --install helmgate ./helm/helmgate --set backend.secrets.openrouterApiKey=YOUR_KEY --set backend.secrets.groqApiKey=YOUR_GROQ_KEY
+
+4. Open the UI:
+   http://localhost:{{ .Values.frontend.service.nodePort }}

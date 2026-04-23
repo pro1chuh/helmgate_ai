@@ -1,0 +1,47 @@
+nameOverride: ""
+fullnameOverride: ""
+
+frontend:
+  image:
+    repository: helmgate-frontend
+    tag: local
+    pullPolicy: Never
+  service:
+    type: NodePort
+    port: 3000
+    nodePort: 30030
+
+backend:
+  image:
+    repository: helmgate-backend
+    tag: local
+    pullPolicy: Never
+  service:
+    port: 8000
+  env:
+    appEnv: production
+    openrouterBaseUrl: https://openrouter.ai/api/v1
+    defaultDailyTokenLimit: "0"
+    lowBalanceThresholdRub: "100"
+    circuitBreakerFailureThreshold: "3"
+    circuitBreakerCooldownSeconds: "60"
+  secrets:
+    openrouterApiKey: ""
+    groqApiKey: ""
+    telegramAlertToken: ""
+    telegramAlertChatId: ""
+
+postgres:
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  database: helm
+  username: helm
+  password: helm
+
+redis:
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
