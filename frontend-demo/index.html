@@ -63,6 +63,19 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-6px) scale(1.03); }
 }
+@keyframes loadingCardIn {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes loadingOrbDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(18px, -14px, 0) scale(1.08); }
+}
+@keyframes logoSheen {
+  0% { transform: translateX(-120%) rotate(18deg); opacity: 0; }
+  35% { opacity: .55; }
+  70%, 100% { transform: translateX(140%) rotate(18deg); opacity: 0; }
+}
 @keyframes logoPulse {
   0% { transform: scale(.8); opacity: .45; }
   70% { transform: scale(1.5); opacity: 0; }
@@ -92,6 +105,7 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
   filter: blur(56px);
   opacity: .28;
   pointer-events: none;
+  animation: loadingOrbDrift 5.5s ease-in-out infinite;
 }
 .loading-orb--left {
   left: -80px;
@@ -102,6 +116,7 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
   right: -80px;
   bottom: 10%;
   background: rgba(129,140,248,.28);
+  animation-delay: -2s;
 }
 .loading-card {
   position: relative;
@@ -116,6 +131,7 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
   flex-direction: column;
   align-items: center;
   text-align: center;
+  animation: loadingCardIn .38s cubic-bezier(.22,1,.36,1);
 }
 .loading-logo-wrap {
   position: relative;
@@ -146,15 +162,25 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
   justify-content: center;
   font-size: 34px;
   font-weight: 800;
-  letter-spacing: -.03em;
+  letter-spacing: 0;
   box-shadow: 0 18px 38px rgba(99,102,241,.30), inset 0 1px 0 rgba(255,255,255,.22);
   animation: logoFloat 2.6s ease-in-out infinite;
+  overflow: hidden;
+}
+.loading-logo::after {
+  content: "";
+  position: absolute;
+  top: -28%;
+  bottom: -28%;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.52), transparent);
+  animation: logoSheen 2.4s ease-in-out infinite;
 }
 .loading-brand {
   font-size: 28px;
   font-weight: 800;
   color: var(--text);
-  letter-spacing: -.04em;
+  letter-spacing: 0;
   margin-bottom: 8px;
 }
 .loading-label {
@@ -177,10 +203,27 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
 }
 .loading-dots span:nth-child(2) { animation-delay: .15s; }
 .loading-dots span:nth-child(3) { animation-delay: .3s; }
+@media (prefers-reduced-motion: reduce) {
+  .loading-card,
+  .loading-logo,
+  .loading-logo::after,
+  .loading-logo-pulse,
+  .loading-orb,
+  .loading-dots span {
+    animation: none;
+  }
+}
 
 /* ── App shell ──────────────────────────────────────────────────────────── */
 .app-shell { display: flex; height: 100vh; overflow: hidden; }
-.app-main  { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.app-main  { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; position: relative; }
+.global-search-floating { position: absolute !important; top: 18px; right: 28px; z-index: 35; }
+.global-search-floating > div,
+.global-search-floating > .btn-primary { box-shadow: var(--shadow); }
+@media (max-width: 700px) {
+  .global-search-floating { top: 12px; right: 12px; }
+  .global-search-floating .btn-primary span { display: none; }
+}
 
 /* ── Sidebar — standard ─────────────────────────────────────────────────── */
 .sidebar {
@@ -214,6 +257,43 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
 .sb-search-ico { color: var(--muted); display: flex; flex-shrink: 0; }
 .sb-search { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 13px; }
 .sb-search::placeholder { color: var(--muted); }
+.sb-tag-filter {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 10px 11px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+.sb-tag-filter::-webkit-scrollbar { height: 5px; }
+.sb-tag-filter::-webkit-scrollbar-track { background: transparent; }
+.sb-tag-filter::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 999px;
+}
+.sb-tag-filter:hover::-webkit-scrollbar-thumb { background: var(--muted); }
+.sb-tag-chip {
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sb-tag-chip:hover,
+.sb-tag-chip.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(99,102,241,.11);
+}
+.sb-tag-chip--project.active { border-color: #2563EB; color: #2563EB; background: rgba(37,99,235,.1); }
+.sb-tag-chip--docs.active { border-color: #059669; color: #059669; background: rgba(5,150,105,.1); }
+.sb-tag-chip--clients.active { border-color: #D97706; color: #D97706; background: rgba(217,119,6,.11); }
+.sb-tag-chip--ideas.active { border-color: #DB2777; color: #DB2777; background: rgba(219,39,119,.1); }
 
 .sb-scroll { flex: 1; overflow-y: auto; padding: 0 6px 8px; }
 .sb-scroll::-webkit-scrollbar { width: 3px; }
@@ -233,7 +313,63 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
 .sb-chat-item.active { background: var(--accent-lt); color: var(--accent); font-weight: 600; }
 .sb-chat-ico { color: var(--muted); flex-shrink: 0; opacity: .7; }
 .sb-chat-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-chat-tag {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.sb-chat-tag--project,
+.sb-tag-dot--project { background: rgba(37,99,235,.12); color: #2563EB; }
+.sb-chat-tag--docs,
+.sb-tag-dot--docs { background: rgba(5,150,105,.12); color: #059669; }
+.sb-chat-tag--clients,
+.sb-tag-dot--clients { background: rgba(217,119,6,.13); color: #D97706; }
+.sb-chat-tag--ideas,
+.sb-tag-dot--ideas { background: rgba(219,39,119,.12); color: #DB2777; }
+.sb-tag-dot {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 10px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.sb-tag-dot:hover { border-color: var(--accent); color: var(--accent); }
+.sb-tag-dot.sb-tag-dot--project { background: rgba(37,99,235,.12); color: #2563EB; }
+.sb-tag-dot.sb-tag-dot--docs { background: rgba(5,150,105,.12); color: #059669; }
+.sb-tag-dot.sb-tag-dot--clients { background: rgba(217,119,6,.13); color: #D97706; }
+.sb-tag-dot.sb-tag-dot--ideas { background: rgba(219,39,119,.12); color: #DB2777; }
+.sb-tag-dot.sb-tag-dot--project:hover { border-color: #2563EB; }
+.sb-tag-dot.sb-tag-dot--docs:hover { border-color: #059669; }
+.sb-tag-dot.sb-tag-dot--clients:hover { border-color: #D97706; }
+.sb-tag-dot.sb-tag-dot--ideas:hover { border-color: #DB2777; }
 .sb-chat-dots { color: var(--muted); display: flex; padding: 2px; }
+.sb-chat-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 24px);
+  gap: 3px;
+  flex-shrink: 0;
+}
+.sb-chat-action-btn,
+.sb-chat-actions .sb-tag-dot {
+  width: 24px;
+  height: 24px;
+}
+.sb-chat-actions .sb-tag-dot {
+  font-size: 10px;
+}
 .sb-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; color: var(--muted); font-size: 13px; }
 .sb-empty-icon { opacity: .35; }
 
@@ -343,6 +479,66 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
 .markdown-body th { background: var(--surface2); padding: 8px 12px; text-align: left; font-weight: 700; border: 1px solid var(--border); }
 .markdown-body td { padding: 8px 12px; border: 1px solid var(--border); }
 .markdown-body blockquote { border-left: 3px solid var(--accent); margin: .8em 0; padding-left: 14px; color: var(--muted); }
+.source-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 10px;
+}
+.source-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.source-count {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99,102,241,.12);
+  color: var(--accent);
+  font-size: 11px;
+}
+.source-list { display: grid; gap: 8px; }
+.source-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+.source-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.source-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+}
+.source-meta, .source-score {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.source-snippet {
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
 .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; }
@@ -667,10 +863,10 @@ body { font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--t
 <div id="root"></div>
 <script type="text/babel" src="app/context.jsx?v=20260423-memoryfix"></script>
 <script type="text/babel" src="app/ui.jsx?v=20260423-memoryfix"></script>
-<script type="text/babel" src="app/sidebar.jsx?v=20260423-memoryfix"></script>
+<script type="text/babel" src="app/sidebar.jsx?v=20260425-chat-actions"></script>
 <script type="text/babel" src="app/chat.jsx?v=20260423-memoryfix"></script>
 <script type="text/babel" src="app/pages.jsx?v=20260423-memoryfix"></script>
-<script type="text/babel" src="app/main.jsx?v=20260423-memoryfix"></script>
+<script type="text/babel" src="app/main.jsx?v=20260425-loading-preview"></script>
 <script>
 if (window.marked) {
   window.marked.setOptions({ breaks: true, gfm: true });

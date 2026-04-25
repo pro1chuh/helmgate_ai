@@ -1,6 +1,6 @@
 const { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } = React;
 
-const API_ROOT = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+const API_ROOT = "/api";
 const AUTH_STORAGE_KEY = "helm_ai_auth";
 
 const T = {
@@ -88,6 +88,20 @@ const T = {
     edit: "Изменить",
     delete: "Удалить",
     search_chat: "Поиск по чату",
+    search_button: "Поиск",
+    search_scope_chats: "По чатам",
+    search_scope_all: "По всему",
+    universal_search: "Глобальный поиск",
+    universal_search_hint: "Чаты, сообщения, файлы, память и воркспейсы",
+    universal_search_placeholder: "Поиск по всему Helm...",
+    search_category_chats: "Чаты",
+    search_category_messages: "Сообщения",
+    search_category_files: "Файлы",
+    search_category_memory: "Память",
+    search_category_workspaces: "Воркспейсы",
+    sources: "Источники",
+    source_chunk: "Фрагмент",
+    source_relevance: "релевантность",
     search_chat_hint: "Найдите момент по ключевым словам или смыслу",
     search_placeholder: "Например: найди часть про нейросети",
     best_match: "Лучшее совпадение",
@@ -114,6 +128,17 @@ const T = {
     delete_chat: "Удалить чат",
     collapse_sidebar: "Свернуть боковую панель",
     expand_sidebar: "Развернуть боковую панель",
+    all_chats: "Все",
+    chat_tag_project: "Проект",
+    chat_tag_docs: "Документы",
+    chat_tag_clients: "Клиенты",
+    chat_tag_ideas: "Идеи",
+    chat_tag_none: "Без метки",
+    chat_tag_set: "Метка чата",
+    active_chats: "Активные",
+    archived_chats: "Архив",
+    archive_chat: "В архив",
+    restore_chat: "Вернуть",
   },
   en: {
     app_name: "Helm AI",
@@ -199,6 +224,20 @@ const T = {
     edit: "Edit",
     delete: "Delete",
     search_chat: "Search chat",
+    search_button: "Search",
+    search_scope_chats: "Chats",
+    search_scope_all: "Everything",
+    universal_search: "Universal search",
+    universal_search_hint: "Chats, messages, files, memory, and workspaces",
+    universal_search_placeholder: "Search across Helm...",
+    search_category_chats: "Chats",
+    search_category_messages: "Messages",
+    search_category_files: "Files",
+    search_category_memory: "Memory",
+    search_category_workspaces: "Workspaces",
+    sources: "Sources",
+    source_chunk: "Chunk",
+    source_relevance: "relevance",
     search_chat_hint: "Find a moment by keyword or context",
     search_placeholder: "Example: find the part about neural networks",
     best_match: "Best match",
@@ -225,6 +264,17 @@ const T = {
     delete_chat: "Delete chat",
     collapse_sidebar: "Collapse sidebar",
     expand_sidebar: "Expand sidebar",
+    all_chats: "All",
+    chat_tag_project: "Project",
+    chat_tag_docs: "Docs",
+    chat_tag_clients: "Clients",
+    chat_tag_ideas: "Ideas",
+    chat_tag_none: "No tag",
+    chat_tag_set: "Chat tag",
+    active_chats: "Active",
+    archived_chats: "Archive",
+    archive_chat: "Archive",
+    restore_chat: "Restore",
   },
 };
 
@@ -380,6 +430,8 @@ function AppProvider({ children }) {
 
   const normalizeChat = useCallback((chat) => ({
     ...chat,
+    tag: chat.tag || null,
+    archived: Boolean(chat.archived),
     createdAt: chat.created_at || chat.createdAt || new Date().toISOString(),
     updatedAt: chat.updated_at || chat.updatedAt || new Date().toISOString(),
   }), []);
@@ -390,6 +442,7 @@ function AppProvider({ children }) {
     content: message.content || "",
     model: message.model_used || message.model || null,
     taskType: message.task_type || message.taskType || "text",
+    sources: Array.isArray(message.sources) ? message.sources : [],
     ts: message.created_at || message.ts || new Date().toISOString(),
   }), []);
 
@@ -408,7 +461,8 @@ function AppProvider({ children }) {
       total_requests: items.length,
     }));
     if (!activeChatId && items.length > 0) {
-      setActiveChatId(items[0].id);
+      const firstActive = items.find((chat) => !chat.archived) || items[0];
+      setActiveChatId(firstActive.id);
     }
     return items;
   }, [activeChatId, normalizeChat]);
@@ -603,6 +657,7 @@ function AppProvider({ children }) {
       content: "",
       model: null,
       taskType: "text",
+      sources: [],
       created_at: new Date().toISOString(),
     });
 
@@ -652,6 +707,10 @@ function AppProvider({ children }) {
                 model: payload.model || null,
                 taskType: payload.task_type || "text",
               });
+            } else if (payload.type === "sources") {
+              patchMessage(chatId, assistantId, {
+                sources: Array.isArray(payload.sources) ? payload.sources : [],
+              });
             } else if (payload.type === "token") {
               patchMessage(chatId, assistantId, (message) => ({
                 content: `${message.content}${payload.content || ""}`,
@@ -697,6 +756,30 @@ function AppProvider({ children }) {
       setActiveChatId(remainingChats.length ? remainingChats[0].id : null);
     }
   }, [activeChatId, chats]);
+
+  const updateChatTag = useCallback(async (chatId, tag) => {
+    const payload = await apiFetch(`/chats/${chatId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ tag: tag || "" }),
+    });
+    const updated = normalizeChat(payload);
+    setChats((prev) => prev.map((chat) => chat.id === chatId ? updated : chat));
+    return updated;
+  }, [normalizeChat]);
+
+  const updateChatArchive = useCallback(async (chatId, archived) => {
+    const payload = await apiFetch(`/chats/${chatId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived }),
+    });
+    const updated = normalizeChat(payload);
+    setChats((prev) => prev.map((chat) => chat.id === chatId ? updated : chat));
+    if (archived && activeChatId === chatId) {
+      const nextActive = chats.find((chat) => chat.id !== chatId && !chat.archived);
+      setActiveChatId(nextActive?.id || null);
+    }
+    return updated;
+  }, [activeChatId, chats, normalizeChat]);
 
   const uploadFiles = useCallback(async (selectedFiles) => {
     const uploaded = [];
@@ -802,6 +885,8 @@ function AppProvider({ children }) {
         refreshChat,
         sendMessage,
         deleteChat,
+        updateChatTag,
+        updateChatArchive,
         files,
         uploadFiles,
         deleteFile,

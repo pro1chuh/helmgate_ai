@@ -1,8 +1,14 @@
 function App() {
   const { t } = useLang();
   const { authed, authLoading } = useApp();
+  const [loadingPreview, setLoadingPreview] = React.useState(true);
 
-  if (authLoading) {
+  React.useEffect(() => {
+    const timer = setTimeout(() => setLoadingPreview(false), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (authLoading || loadingPreview) {
     return React.createElement(LoadingScreen, { label: t("loading") });
   }
 
@@ -40,11 +46,12 @@ function MainContent() {
   const { page, pageKey, wsDetailId } = useApp();
 
   return React.createElement("main", { className: "app-main" },
+    page !== "chat" && React.createElement(UniversalSearch, { floating: true }),
     React.createElement("div", { className: "page-anim", key: `${page}-${pageKey}` },
       page === "chat" && React.createElement(ChatView),
       page === "files" && React.createElement(FilesPage),
       page === "workspaces" && (wsDetailId ? React.createElement(WorkspaceDetail) : React.createElement(WorkspacesPage)),
-      page === "memory" && React.createElement(MemoryPageV2),
+      page === "memory" && React.createElement(MemoryPageV3),
       page === "ws-detail" && React.createElement(WorkspaceDetail),
       page === "admin" && React.createElement(AdminPage),
       page === "profile" && React.createElement(ProfilePage)

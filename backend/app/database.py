@@ -70,6 +70,9 @@ async def init_db():
         _manual_migrations = [
             "ALTER TABLE chats ADD COLUMN IF NOT EXISTS system_prompt TEXT",
             "ALTER TABLE chats ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL",
+            "ALTER TABLE chats ADD COLUMN IF NOT EXISTS tag VARCHAR(50)",
+            "ALTER TABLE chats ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sources JSONB",
             """CREATE TABLE IF NOT EXISTS refresh_token_blacklist (
                 id SERIAL PRIMARY KEY,
                 jti VARCHAR(64) UNIQUE NOT NULL,

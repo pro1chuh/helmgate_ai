@@ -24,6 +24,7 @@ const IconBrain     = ic([{tag:'path',p:{d:'M9.5 2A2.5 2.5 0 007 4.5v0A2.5 2.5 0
 const IconSearch    = ic([{tag:'circle',p:{cx:11,cy:11,r:8}},{tag:'line',p:{x1:21,y1:21,x2:16.65,y2:16.65}}],{width:14,height:14});
 const IconUpload    = ic([{tag:'polyline',p:{points:'16 16 12 12 8 16'}},{tag:'line',p:{x1:12,y1:12,x2:12,y2:21}},{tag:'path',p:{d:'M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3'}}],{width:20,height:20});
 const IconTrash     = ic([{tag:'polyline',p:{points:'3 6 5 6 21 6'}},{tag:'path',p:{d:'M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6'}},{tag:'path',p:{d:'M10 11v6M14 11v6'}},{tag:'path',p:{d:'M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2'}}],{width:14,height:14});
+const IconArchive   = ic([{tag:'rect',p:{x:3,y:3,width:18,height:4,rx:1}},{tag:'path',p:{d:'M5 7v12a2 2 0 002 2h10a2 2 0 002-2V7'}},{tag:'path',p:{d:'M10 12h4'}}],{width:14,height:14});
 const IconDots      = (props={}) => React.createElement('svg',{width:14,height:14,viewBox:'0 0 24 24',fill:'currentColor',...props},
   React.createElement('circle',{cx:12,cy:5,r:1.5}),
   React.createElement('circle',{cx:12,cy:12,r:1.5}),
@@ -84,4 +85,5 @@ Object.assign(window, {
   IconPlus, IconChat, IconFile, IconFolder, IconUsers, IconShield, IconMoon, IconSun,
   IconSend, IconPaperclip, IconMic, IconCopy, IconCheck, IconLogout, IconBrain,
   IconSearch, IconUpload, IconTrash, IconDots, IconChevron, IconStar, IconX,
+  IconArchive,
 });

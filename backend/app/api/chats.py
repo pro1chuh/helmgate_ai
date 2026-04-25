@@ -38,6 +38,8 @@ SYSTEM_PROMPT = """Ты — Helm, корпоративный AI-ассистен
 class ChatOut(BaseModel):
     id: int
     title: str
+    tag: str | None = None
+    archived: bool = False
     system_prompt: str | None
     created_at: datetime
     updated_at: datetime
@@ -51,6 +53,7 @@ class MessageOut(BaseModel):
     role: str
     content: str
     model_used: str | None
+    sources: list[dict] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True, "protected_namespaces": ()}
@@ -58,11 +61,14 @@ class MessageOut(BaseModel):
 
 class CreateChatRequest(BaseModel):
     title: str | None = None
+    tag: str | None = None
     system_prompt: str | None = None
 
 
 class UpdateChatRequest(BaseModel):
     title: str | None = None
+    tag: str | None = None
+    archived: bool | None = None
     system_prompt: str | None = None
 
 
@@ -196,6 +202,7 @@ async def create_chat(
     chat = Chat(
         user_id=current_user.id,
         title=body.title or "Новый чат",
+        tag=body.tag,
         system_prompt=body.system_prompt,
     )
     db.add(chat)
@@ -219,6 +226,10 @@ async def update_chat(
         raise HTTPException(status_code=404, detail="Chat not found")
     if body.title is not None:
         chat.title = body.title
+    if body.tag is not None:
+        chat.tag = body.tag or None
+    if body.archived is not None:
+        chat.archived = body.archived
     if body.system_prompt is not None:
         chat.system_prompt = body.system_prompt
     await db.commit()
@@ -484,14 +495,15 @@ async def send_message(
 
     # --- RAG: достаём релевантные куски документа ---
     rag_context = ""
+    rag_sources: list[dict] = []
     if route_result.task_type == TaskType.RAG:
-        from app.services.rag import retrieve, build_rag_context
-        chunks = await retrieve(
+        from app.services.rag import retrieve_with_sources, build_rag_context_from_sources
+        rag_sources = await retrieve_with_sources(
             user_id=current_user.id,
             query=body.content,
             document_id=body.file_id,
         )
-        rag_context = build_rag_context(chunks, body.content)
+        rag_context = build_rag_context_from_sources(rag_sources, body.content)
 
     # System prompt: кастомный для чата или дефолтный
     base_prompt = chat.system_prompt if chat.system_prompt else SYSTEM_PROMPT
@@ -523,6 +535,12 @@ async def send_message(
             "model": route_result.model,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        if rag_sources:
+            public_sources = [
+                {key: value for key, value in source.items() if key != "text"}
+                for source in rag_sources
+            ]
+            yield f"data: {json.dumps({'type': 'sources', 'sources': public_sources}, ensure_ascii=False)}\n\n"
 
         llm_error = None
         usage_out: dict = {}  # заполняется реальными токенами при стриминге
@@ -579,6 +597,10 @@ async def send_message(
             role="assistant",
             content=full_content,
             model_used=route_result.model,
+            sources=[
+                {key: value for key, value in source.items() if key != "text"}
+                for source in rag_sources
+            ] or None,
         )
         db.add(assistant_msg)
         await db.commit()

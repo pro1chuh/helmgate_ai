@@ -214,6 +214,52 @@ async def retrieve(
         return []
 
 
+async def retrieve_with_sources(
+    user_id: int,
+    query: str,
+    document_id: int | None = None,
+    top_k: int = TOP_K,
+) -> list[dict]:
+    """Returns relevant chunks with metadata for UI citations."""
+    try:
+        collection = _user_collection(user_id)
+        count = collection.count()
+        if count <= 0:
+            return []
+
+        where = {"document_id": document_id} if document_id else None
+        results = collection.query(
+            query_texts=[query],
+            n_results=min(top_k, count),
+            where=where,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        documents = results.get("documents", [[]])[0] if results.get("documents") else []
+        metadatas = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
+        distances = results.get("distances", [[]])[0] if results.get("distances") else []
+
+        sources = []
+        for index, chunk in enumerate(documents):
+            metadata = metadatas[index] if index < len(metadatas) and metadatas[index] else {}
+            distance = distances[index] if index < len(distances) else None
+            snippet = re.sub(r"\s+", " ", chunk or "").strip()
+            sources.append({
+                "source_id": index + 1,
+                "document_id": metadata.get("document_id"),
+                "filename": metadata.get("filename") or "Document",
+                "chunk_index": metadata.get("chunk_index"),
+                "snippet": snippet[:360],
+                "score": None if distance is None else max(0, min(1, 1 - float(distance))),
+                "text": chunk or "",
+            })
+        return sources
+
+    except Exception as e:
+        logger.error(f"RAG retrieval with sources failed: {e}")
+        return []
+
+
 # -------------------------------------------------------
 # Формирование контекста для LLM
 # -------------------------------------------------------
@@ -232,4 +278,27 @@ def build_rag_context(chunks: list[str], query: str) -> str:
         f"=== ФРАГМЕНТЫ ДОКУМЕНТОВ ===\n{context_text}\n"
         f"=== КОНЕЦ ФРАГМЕНТОВ ===\n\n"
         f"Вопрос пользователя: {query}"
+    )
+
+
+def build_rag_context_from_sources(sources: list[dict], query: str) -> str:
+    if not sources:
+        return ""
+
+    chunks = []
+    for source in sources:
+        chunks.append(
+            f"[source {source.get('source_id')}] "
+            f"{source.get('filename')} / chunk {source.get('chunk_index')}\n"
+            f"{source.get('text') or source.get('snippet') or ''}"
+        )
+
+    context_text = "\n\n---\n\n".join(chunks)
+    return (
+        "Use the following document fragments to answer the user's question. "
+        "When the answer relies on them, mention the relevant source numbers naturally.\n"
+        "If the answer is not contained in the documents, say that clearly.\n\n"
+        f"=== DOCUMENT FRAGMENTS ===\n{context_text}\n"
+        f"=== END DOCUMENT FRAGMENTS ===\n\n"
+        f"User question: {query}"
     )

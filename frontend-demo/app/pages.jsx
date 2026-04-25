@@ -1463,6 +1463,418 @@ function MemoryPageV2() {
   );
 }
 
+function MemoryPageV3() {
+  const { t, lang } = useLang();
+  const { memoryFacts, activeChat, activeMessages, upsertMemoryFact, deleteMemoryFact } = useApp();
+  const isRu = lang === "ru";
+  const templates = [
+    {
+      id: "preferred_language",
+      key: "preferred_language",
+      label: isRu ? "Язык общения" : "Language",
+      description: isRu ? "На каком языке Helm должен отвечать вам" : "Which language Helm should use in replies",
+      example: isRu ? "русский" : "English",
+      placeholder: isRu ? "Например: русский" : "For example: English",
+    },
+    {
+      id: "project_role",
+      key: "project_role",
+      label: isRu ? "Моя роль" : "My role",
+      description: isRu ? "Кто вы в проекте или команде" : "Who you are in the project or team",
+      example: "product manager",
+      placeholder: isRu ? "Например: product manager" : "For example: product manager",
+    },
+    {
+      id: "response_style",
+      key: "response_style",
+      label: isRu ? "Стиль ответов" : "Response style",
+      description: isRu ? "Как Helm должен формулировать ответы" : "How Helm should phrase its answers",
+      example: isRu ? "кратко и по делу" : "short and practical",
+      placeholder: isRu ? "Например: кратко и по делу" : "For example: short and practical",
+    },
+    {
+      id: "current_project",
+      key: "current_project",
+      label: isRu ? "Текущий проект" : "Current project",
+      description: isRu ? "О каком проекте вы говорите чаще всего" : "What project most of your conversations are about",
+      example: "HelpGate AI",
+      placeholder: isRu ? "Например: HelpGate AI" : "For example: HelpGate AI",
+    },
+    {
+      id: "custom_note",
+      key: "custom_note",
+      label: isRu ? "Другое важное" : "Other important detail",
+      description: isRu ? "Любой устойчивый факт, который стоит помнить" : "Any stable detail worth remembering",
+      example: isRu ? "мне удобны ответы с примерами" : "I prefer answers with examples",
+      placeholder: isRu ? "Например: мне удобны ответы с примерами" : "For example: I prefer answers with examples",
+    },
+  ];
+  const [selectedTemplateId, setSelectedTemplateId] = useState(templates[0].id);
+  const [memoryValue, setMemoryValue] = useState("");
+  const [editingKey, setEditingKey] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const selectedTemplate = templates.find((item) => item.id === selectedTemplateId) || templates[0];
+  const prettyKey = (key) => String(key || "")
+    .replace(/^custom_note[_-]?/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+  const steps = isRu
+    ? [
+        "Выберите тип того, что Helm должен запомнить",
+        "Напишите это одной понятной фразой",
+        "Сохраните, и Helm будет учитывать это в следующих ответах",
+      ]
+    : [
+        "Choose what Helm should remember",
+        "Write it as one clear phrase",
+        "Save it, and Helm will use it in future replies",
+      ];
+
+  const templateForKey = (key) => {
+    if (!key) return templates[0];
+    return templates.find((item) => key === item.key || key.startsWith(`${item.key}_`)) || templates[templates.length - 1];
+  };
+
+  const beginEdit = (fact) => {
+    const nextTemplate = templateForKey(fact.key);
+    setSelectedTemplateId(nextTemplate.id);
+    setMemoryValue(fact.value || "");
+    setEditingKey(fact.key);
+    setMessage("");
+    setError("");
+  };
+
+  const chooseTemplate = (item, fillExample = false) => {
+    setSelectedTemplateId(item.id);
+    if (!editingKey || !editingKey.startsWith(item.key)) {
+      setEditingKey("");
+    }
+    if (fillExample) {
+      setMemoryValue(item.example);
+    }
+    setMessage("");
+    setError("");
+  };
+
+  const saveMemory = async () => {
+    const value = memoryValue.trim();
+    if (!value) return;
+
+    const key = editingKey || (
+      selectedTemplate.id === "custom_note"
+        ? `custom_note_${Date.now()}`
+        : selectedTemplate.key
+    );
+
+    setMessage("");
+    setError("");
+    try {
+      await upsertMemoryFact({ key, value });
+      setMemoryValue("");
+      setEditingKey("");
+      setMessage(t("memory_saved"));
+    } catch (err) {
+      setError(err?.detail || err?.message || "Memory save failed");
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingKey("");
+    setMemoryValue("");
+    setMessage("");
+    setError("");
+  };
+
+  const useCurrentChat = () => {
+    const lastUserMessage = [...(activeMessages || [])].reverse().find((item) => item.role === "user" && item.content?.trim());
+    const sourceText = lastUserMessage?.content?.trim() || activeChat?.title?.trim() || "";
+    if (!sourceText) {
+      setMessage("");
+      setError(t("memory_chat_empty"));
+      return;
+    }
+    setSelectedTemplateId("custom_note");
+    setEditingKey("");
+    setMemoryValue(sourceText.replace(/\s+/g, " ").trim().slice(0, 240));
+    setError("");
+    setMessage(t("memory_chat_saved"));
+  };
+
+  return React.createElement("div", { className: "page" },
+    React.createElement("div", { className: "page-header" },
+      React.createElement("div", null,
+        React.createElement("h1", { className: "page-title" }, t("memory_title")),
+        React.createElement("p", { className: "page-sub" }, t("memory_subtitle"))
+      )
+    ),
+    React.createElement("div", { className: "profile-wrap", style: { maxWidth: 940 } },
+      React.createElement("div", { className: "profile-section" },
+        React.createElement("div", { className: "profile-section-title" }, isRu ? "Как это работает" : "How it works"),
+        React.createElement("div", {
+          style: {
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 10,
+            marginBottom: 16,
+          },
+        },
+          steps.map((step, index) => React.createElement("div", {
+            key: `${index}-${step}`,
+            style: {
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              background: "var(--surface2)",
+            },
+          },
+            React.createElement("div", {
+              style: {
+                fontSize: 11,
+                fontWeight: 800,
+                color: "var(--accent)",
+                textTransform: "uppercase",
+                letterSpacing: ".05em",
+                marginBottom: 6,
+              },
+            }, `${isRu ? "Шаг" : "Step"} ${index + 1}`),
+            React.createElement("div", {
+              style: {
+                fontSize: 13,
+                color: "var(--text2)",
+                lineHeight: 1.5,
+              },
+            }, step)
+          ))
+        ),
+        React.createElement("div", {
+          style: {
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "var(--accent-lt)",
+            color: "var(--text2)",
+            fontSize: 13,
+            lineHeight: 1.55,
+          },
+        }, isRu
+          ? "Сохраняйте только устойчивые вещи: язык, роль, проект, стиль ответов. Не сохраняйте случайные одноразовые фразы."
+          : "Save only stable details: language, role, project, response style. Avoid one-off temporary phrases.")
+      ),
+      React.createElement("div", { className: "profile-section" },
+        React.createElement("div", {
+          style: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 12,
+          },
+        },
+          React.createElement("div", { className: "profile-section-title", style: { marginBottom: 0 } }, isRu ? "Что запомнить" : "What to remember"),
+          React.createElement("button", { className: "msg-action", onClick: useCurrentChat }, t("memory_use_chat"))
+        ),
+        React.createElement("div", {
+          style: {
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 8,
+            marginBottom: 18,
+          },
+        },
+          templates.map((item) => React.createElement("button", {
+            key: item.id,
+            onClick: () => chooseTemplate(item, false),
+            style: {
+              textAlign: "left",
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: item.id === selectedTemplateId ? "1px solid var(--accent)" : "1px solid var(--border)",
+              background: item.id === selectedTemplateId ? "var(--accent-lt)" : "var(--surface2)",
+              boxShadow: item.id === selectedTemplateId ? "0 0 0 1px var(--accent-lt2) inset" : "none",
+            },
+          },
+            React.createElement("div", {
+              style: {
+                fontSize: 13,
+                fontWeight: 800,
+                color: item.id === selectedTemplateId ? "var(--accent)" : "var(--text)",
+                marginBottom: 4,
+              },
+            }, item.label),
+            React.createElement("div", {
+              style: {
+                fontSize: 12,
+                color: "var(--muted)",
+                lineHeight: 1.45,
+                marginBottom: 6,
+              },
+            }, item.description),
+            React.createElement("div", {
+              style: {
+                fontSize: 12,
+                color: "var(--text2)",
+                lineHeight: 1.45,
+              },
+            }, `${isRu ? "Пример" : "Example"}: ${item.example}`)
+          ))
+        ),
+        React.createElement("div", { className: "profile-field" },
+          React.createElement("label", null, isRu ? "Выбранный тип памяти" : "Selected memory type"),
+          React.createElement("input", {
+            className: "profile-input",
+            value: selectedTemplate.label,
+            readOnly: true,
+          })
+        ),
+        React.createElement("div", { className: "profile-field" },
+          React.createElement("label", null, isRu ? "Что именно сохранить" : "What exactly to save"),
+          React.createElement("div", {
+            style: {
+              fontSize: 12,
+              color: "var(--muted)",
+              marginBottom: 8,
+            },
+          }, selectedTemplate.description),
+          React.createElement("input", {
+            className: "profile-input",
+            value: memoryValue,
+            onChange: (event) => setMemoryValue(event.target.value),
+            placeholder: selectedTemplate.placeholder,
+          })
+        ),
+        React.createElement("div", {
+          style: {
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginTop: 4,
+          },
+        },
+          React.createElement("button", {
+            className: "btn-primary",
+            onClick: saveMemory,
+            style: {
+              width: "auto",
+              paddingInline: 18,
+            },
+          }, editingKey
+            ? (isRu ? "Обновить память" : "Update memory")
+            : (isRu ? "Сохранить в память" : "Save to memory")),
+          React.createElement("button", {
+            className: "msg-action",
+            onClick: () => chooseTemplate(selectedTemplate, true),
+          }, isRu ? "Подставить пример" : "Use example"),
+          editingKey && React.createElement("button", {
+            className: "msg-action",
+            onClick: cancelEdit,
+          }, isRu ? "Отменить" : "Cancel")
+        ),
+        React.createElement("div", {
+          style: {
+            fontSize: 12,
+            color: "var(--muted)",
+            marginTop: 10,
+          },
+        }, isRu
+          ? "Пишите так, как сказали бы это человеку. Например: русский, product manager, кратко и по делу."
+          : "Write it the way you would tell a person. For example: English, product manager, short and practical."),
+        message && React.createElement("div", { style: { color: "#10B981", fontSize: 13, marginTop: 14 } }, message),
+        error && React.createElement("div", { style: { color: "#EF4444", fontSize: 13, marginTop: 14 } }, error)
+      ),
+      React.createElement("div", { className: "profile-section" },
+        React.createElement("div", { className: "profile-section-title" }, isRu ? "Уже сохранено" : "Already saved"),
+        memoryFacts.length === 0
+          ? React.createElement("div", {
+              style: {
+                padding: "14px 16px",
+                borderRadius: 10,
+                background: "var(--surface2)",
+                color: "var(--muted)",
+                fontSize: 13,
+              },
+            }, isRu ? "Память пока пустая. Выберите карточку выше и сохраните первый факт." : "Memory is empty. Choose a card above and save your first fact.")
+          : React.createElement("div", {
+              style: {
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              },
+            },
+            memoryFacts.map((fact) => {
+              const factTemplate = templateForKey(fact.key);
+              return React.createElement("div", {
+                key: fact.id || fact.key,
+                style: {
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: 14,
+                  background: "var(--surface2)",
+                },
+              },
+                React.createElement("div", {
+                  style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  },
+                },
+                  React.createElement("div", { style: { minWidth: 0, flex: 1 } },
+                    React.createElement("div", {
+                      style: {
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "var(--accent)",
+                        textTransform: "uppercase",
+                        letterSpacing: ".04em",
+                        marginBottom: 8,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "var(--accent-lt)",
+                      },
+                    }, factTemplate.label),
+                    React.createElement("div", {
+                      style: {
+                        fontSize: 14,
+                        color: "var(--text)",
+                        lineHeight: 1.55,
+                        wordBreak: "break-word",
+                        marginBottom: 6,
+                      },
+                    }, fact.value),
+                    React.createElement("div", {
+                      style: {
+                        fontSize: 12,
+                        color: "var(--muted)",
+                      },
+                    }, `${t("memory_updated_at")}: ${new Date(fact.updated_at).toLocaleString()}${factTemplate.id === "custom_note" && prettyKey(fact.key) ? ` · ${prettyKey(fact.key)}` : ""}`)
+                  ),
+                  React.createElement("div", { style: { display: "flex", gap: 8, flexShrink: 0 } },
+                    React.createElement("button", {
+                      className: "msg-action",
+                      onClick: () => beginEdit(fact),
+                    }, t("edit")),
+                    React.createElement("button", {
+                      className: "msg-action",
+                      onClick: () => deleteMemoryFact(fact.key),
+                    }, t("delete"))
+                  )
+                )
+              );
+            })
+          )
+      )
+    )
+  );
+}
+
 Object.assign(window, {
   AuthPage,
   FilesPage,
@@ -1472,5 +1884,6 @@ Object.assign(window, {
   MemoryPageTest,
   MemoryPage,
   MemoryPageV2,
+  MemoryPageV3,
   ProfilePage,
 });

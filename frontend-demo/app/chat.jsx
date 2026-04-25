@@ -53,6 +53,31 @@ function scoreMessage(message, terms) {
   return score;
 }
 
+function scoreText(text, terms) {
+  const haystack = normalizeForSearch(text);
+  if (!haystack || !terms.length) return 0;
+
+  return terms.reduce((score, term) => {
+    if (!haystack.includes(term)) return score;
+    const repetitions = haystack.split(term).length - 1;
+    const startsWithBoost = haystack.startsWith(term) ? 2 : 0;
+    return score + 2 + Math.min(repetitions, 4) + startsWithBoost;
+  }, 0);
+}
+
+function scoreSearchEntry(entry, terms) {
+  const base = scoreText(entry.searchText, terms);
+  if (!base) return 0;
+  const typeBoost = {
+    message: 4,
+    chat: 3,
+    file: 2,
+    memory: 2,
+    workspace: 2,
+  };
+  return base + (typeBoost[entry.type] || 0);
+}
+
 function highlightText(text, terms) {
   if (!terms.length) return escapeHtml(text);
   const escapedTerms = terms
@@ -86,32 +111,118 @@ function formatSnippet(text, terms) {
 }
 
 function ChatView() {
-  const { t } = useLang();
-  const { activeChat, activeMessages, files, sendMessage, thinking, refreshChat } = useApp();
+  const { t, lang } = useLang();
+  const { activeChat, activeChatId, activeMessages, chats, files, workspaces, memoryFacts, messagesByChat, loadMessages, selectChat, navigate, sendMessage, thinking, refreshChat } = useApp();
   const [input, setInput] = useState("");
   const [selectedFileId, setSelectedFileId] = useState("");
   const [memoryMode, setMemoryMode] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState("chats");
   const [highlight, setHighlight] = useState(null);
+  const [pendingJump, setPendingJump] = useState(null);
   const messagesRef = useRef(null);
   const textRef = useRef(null);
 
   const messages = activeMessages || [];
   const terms = extractTerms(searchQuery);
+  const searchableEntries = useMemo(() => {
+    const chatEntries = chats.map((chat) => ({
+      type: "chat",
+      id: `chat-${chat.id}`,
+      title: chat.title || t("new_chat"),
+      subtitle: t("chats"),
+      searchText: `${chat.title || ""} ${chat.createdAt || ""} ${chat.updatedAt || ""}`,
+      chatId: chat.id,
+    }));
+
+    const messageEntries = chats.flatMap((chat) =>
+      (messagesByChat[chat.id] || []).map((message) => ({
+        type: "message",
+        id: `message-${chat.id}-${message.id}`,
+        title: chat.title || t("new_chat"),
+        subtitle: `${t("search_category_messages")} · ${message.role}`,
+        body: message.content || "",
+        searchText: `${chat.title || ""} ${message.role || ""} ${message.content || ""}`,
+        chatId: chat.id,
+        chatTitle: chat.title,
+        message,
+      }))
+    );
+
+    const fileEntries = files.map((file) => ({
+      type: "file",
+      id: `file-${file.id}`,
+      title: file.filename || file.name || t("files"),
+      subtitle: `${t("search_category_files")} · ${file.status || ""}`,
+      body: [file.mime_type, file.ext, file.status, file.chunks ? `${file.chunks} ${t("chunks_label")}` : ""].filter(Boolean).join(" · "),
+      searchText: `${file.filename || ""} ${file.name || ""} ${file.mime_type || ""} ${file.ext || ""} ${file.status || ""}`,
+      fileId: file.id,
+    }));
+
+    const memoryEntries = memoryFacts.map((fact) => ({
+      type: "memory",
+      id: `memory-${fact.key}`,
+      title: fact.key || t("memory_title"),
+      subtitle: t("search_category_memory"),
+      body: fact.value || "",
+      searchText: `${fact.key || ""} ${fact.value || ""}`,
+      memoryKey: fact.key,
+    }));
+
+    const workspaceEntries = workspaces.map((workspace) => ({
+      type: "workspace",
+      id: `workspace-${workspace.id}`,
+      title: workspace.name || t("workspaces"),
+      subtitle: t("search_category_workspaces"),
+      body: workspace.description || "",
+      searchText: `${workspace.name || ""} ${workspace.description || ""}`,
+      workspaceId: workspace.id,
+    }));
+
+    return [
+      ...chatEntries,
+      ...messageEntries,
+      ...fileEntries,
+      ...memoryEntries,
+      ...workspaceEntries,
+    ];
+  }, [chats, messagesByChat, files, memoryFacts, workspaces, t]);
   const rankedResults = useMemo(() => {
     if (!terms.length) return [];
-    return messages
-      .map((message) => ({ message, score: scoreMessage(message, terms) }))
+    return searchableEntries
+      .map((entry) => ({ ...entry, score: scoreSearchEntry(entry, terms) }))
       .filter((entry) => entry.score > 0)
       .sort((left, right) => right.score - left.score);
-  }, [messages, searchQuery]);
+  }, [searchableEntries, searchQuery]);
+  const visibleSearchResults = useMemo(() => {
+    if (searchMode === "all") return rankedResults;
+    return rankedResults.filter((entry) => entry.type === "chat" || entry.type === "message");
+  }, [rankedResults, searchMode]);
 
   useEffect(() => {
     if (messagesRef.current) {
       messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     }
   }, [messages.length, thinking]);
+
+  useEffect(() => {
+    if (!searchOpen || chats.length === 0) return;
+    Promise.all(chats.map((chat) => loadMessages(chat.id).catch(() => []))).catch(() => {});
+  }, [searchOpen, chats, loadMessages]);
+
+  useEffect(() => {
+    if (!pendingJump || activeChatId !== pendingJump.chatId) return;
+    const node = document.querySelector(`[data-message-id="${pendingJump.messageId}"]`);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.animate([
+      { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+      { boxShadow: "0 0 0 8px rgba(99,102,241,0.12)" },
+      { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+    ], { duration: 1200, easing: "ease-out" });
+    setPendingJump(null);
+  }, [activeChatId, activeMessages, pendingJump]);
 
   const resize = () => {
     const node = textRef.current;
@@ -120,18 +231,47 @@ function ChatView() {
     node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
   };
 
-  const jumpTo = (message) => {
-    if (!message) return;
-    setHighlight({ messageId: message.id, terms });
+  const jumpTo = async (result) => {
+    if (!result) return;
     setSearchOpen(false);
-    const node = document.querySelector(`[data-message-id="${message.id}"]`);
-    if (node) {
-      node.scrollIntoView({ behavior: "smooth", block: "center" });
-      node.animate([
-        { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
-        { boxShadow: "0 0 0 8px rgba(99,102,241,0.12)" },
-        { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
-      ], { duration: 1200, easing: "ease-out" });
+
+    if (result.type === "message") {
+      setHighlight({ messageId: result.message.id, terms });
+      if (result.chatId !== activeChatId) {
+        setPendingJump({ chatId: result.chatId, messageId: result.message.id });
+        selectChat(result.chatId);
+        await loadMessages(result.chatId, true).catch(() => {});
+        return;
+      }
+      const node = document.querySelector(`[data-message-id="${result.message.id}"]`);
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.animate([
+          { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+          { boxShadow: "0 0 0 8px rgba(99,102,241,0.12)" },
+          { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+        ], { duration: 1200, easing: "ease-out" });
+      }
+      return;
+    }
+
+    if (result.type === "chat") {
+      selectChat(result.chatId);
+      return;
+    }
+
+    if (result.type === "file") {
+      navigate("files");
+      return;
+    }
+
+    if (result.type === "memory") {
+      navigate("memory");
+      return;
+    }
+
+    if (result.type === "workspace") {
+      navigate("workspaces", { wsId: result.workspaceId });
     }
   };
 
@@ -179,7 +319,7 @@ function ChatView() {
             color: "var(--muted)",
             marginTop: 4,
           },
-        }, t("current_chat_search"))
+        }, t("universal_search_hint"))
       ),
       React.createElement("div", { style: { position: "relative" } },
         React.createElement("button", {
@@ -196,13 +336,16 @@ function ChatView() {
           },
         },
           React.createElement(IconSearch),
-          React.createElement("span", null, t("search_chat"))
+          React.createElement("span", null, t("search_button"))
         ),
         searchOpen && React.createElement(ChatSearchPopover, {
           query: searchQuery,
           setQuery: setSearchQuery,
-          rankedResults,
+          mode: searchMode,
+          setMode: setSearchMode,
+          rankedResults: visibleSearchResults,
           terms,
+          currentChatId: activeChatId,
           onJump: jumpTo,
         })
       )
@@ -309,13 +452,20 @@ function ChatView() {
   );
 }
 
-function ChatSearchPopover({ query, setQuery, rankedResults, terms, onJump }) {
+function ChatSearchPopover({ query, setQuery, mode, setMode, rankedResults, terms, currentChatId, onJump }) {
   const { t } = useLang();
-  const bestMatch = rankedResults[0]?.message || null;
-  const exactMatches = rankedResults.filter((entry) =>
-    terms.some((term) => String(entry.message.content || "").toLowerCase().includes(term.toLowerCase()))
-  );
-  const contextMatches = rankedResults.filter((entry) => !exactMatches.includes(entry));
+  const bestMatch = rankedResults[0] || null;
+  const groups = [
+    ["message", t("search_category_messages")],
+    ["chat", t("search_category_chats")],
+    ["file", t("search_category_files")],
+    ["memory", t("search_category_memory")],
+    ["workspace", t("search_category_workspaces")],
+  ].map(([type, label]) => ({
+    type,
+    label,
+    items: rankedResults.filter((entry) => entry.type === type),
+  })).filter((group) => group.items.length > 0);
 
   return React.createElement("div", {
     style: {
@@ -342,11 +492,11 @@ function ChatSearchPopover({ query, setQuery, rankedResults, terms, onJump }) {
         textTransform: "uppercase",
         letterSpacing: ".04em",
       },
-    }, t("search_chat_hint")),
+    }, t("universal_search_hint")),
     React.createElement("input", {
       value: query,
       onChange: (event) => setQuery(event.target.value),
-      placeholder: t("search_placeholder"),
+      placeholder: mode === "all" ? t("universal_search_placeholder") : t("search_placeholder"),
       style: {
         width: "100%",
         height: 42,
@@ -358,6 +508,39 @@ function ChatSearchPopover({ query, setQuery, rankedResults, terms, onJump }) {
         color: "var(--text)",
       },
     }),
+    React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 8,
+        marginTop: 10,
+      },
+    },
+      React.createElement("button", {
+        type: "button",
+        onClick: () => setMode("chats"),
+        style: {
+          height: 36,
+          borderRadius: 10,
+          border: mode === "chats" ? "1px solid var(--accent)" : "1px solid var(--border)",
+          background: mode === "chats" ? "rgba(99,102,241,.12)" : "var(--surface2)",
+          color: mode === "chats" ? "var(--accent)" : "var(--text2)",
+          fontWeight: 800,
+        },
+      }, t("search_scope_chats")),
+      React.createElement("button", {
+        type: "button",
+        onClick: () => setMode("all"),
+        style: {
+          height: 36,
+          borderRadius: 10,
+          border: mode === "all" ? "1px solid var(--accent)" : "1px solid var(--border)",
+          background: mode === "all" ? "rgba(99,102,241,.12)" : "var(--surface2)",
+          color: mode === "all" ? "var(--accent)" : "var(--text2)",
+          fontWeight: 800,
+        },
+      }, t("search_scope_all"))
+    ),
     bestMatch && React.createElement("div", { style: { marginTop: 14 } },
       React.createElement("div", {
         style: {
@@ -367,40 +550,31 @@ function ChatSearchPopover({ query, setQuery, rankedResults, terms, onJump }) {
           marginBottom: 8,
         },
       }, t("best_match")),
-      React.createElement(SearchCard, { message: bestMatch, terms, onJump })
+      React.createElement(SearchCard, { result: bestMatch, terms, currentChatId, onJump })
     ),
-    exactMatches.length > 0 && React.createElement("div", { style: { marginTop: 14 } },
+    groups.map((group) => React.createElement("div", { key: group.type, style: { marginTop: 14 } },
       React.createElement("div", {
         style: {
           fontSize: 12,
           fontWeight: 700,
           color: "var(--muted)",
           marginBottom: 8,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         },
-      }, `${t("exact_matches")} · ${exactMatches.length}`),
-      exactMatches.slice(0, 6).map((entry) => React.createElement(SearchCard, {
-        key: `exact-${entry.message.id}`,
-        message: entry.message,
+      },
+        React.createElement("span", null, group.label),
+        React.createElement("span", null, group.items.length)
+      ),
+      group.items.slice(0, 5).map((entry) => React.createElement(SearchCard, {
+        key: entry.id,
+        result: entry,
         terms,
+        currentChatId,
         onJump,
       }))
-    ),
-    contextMatches.length > 0 && React.createElement("div", { style: { marginTop: 14 } },
-      React.createElement("div", {
-        style: {
-          fontSize: 12,
-          fontWeight: 700,
-          color: "var(--muted)",
-          marginBottom: 8,
-        },
-      }, `${t("context_matches")} · ${contextMatches.length}`),
-      contextMatches.slice(0, 6).map((entry) => React.createElement(SearchCard, {
-        key: `ctx-${entry.message.id}`,
-        message: entry.message,
-        terms,
-        onJump,
-      }))
-    ),
+    )),
     query && !rankedResults.length && React.createElement("div", {
       style: {
         marginTop: 18,
@@ -415,9 +589,155 @@ function ChatSearchPopover({ query, setQuery, rankedResults, terms, onJump }) {
   );
 }
 
-function SearchCard({ message, terms, onJump }) {
+function UniversalSearch({ floating = false }) {
+  const { t } = useLang();
+  const { activeChatId, chats, files, workspaces, memoryFacts, messagesByChat, loadMessages, selectChat, navigate } = useApp();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState("chats");
+  const terms = extractTerms(query);
+
+  useEffect(() => {
+    if (!open || chats.length === 0) return;
+    Promise.all(chats.map((chat) => loadMessages(chat.id).catch(() => []))).catch(() => {});
+  }, [open, chats, loadMessages]);
+
+  const entries = useMemo(() => {
+    const chatEntries = chats.map((chat) => ({
+      type: "chat",
+      id: `global-chat-${chat.id}`,
+      title: chat.title || t("new_chat"),
+      subtitle: t("search_category_chats"),
+      searchText: `${chat.title || ""} ${chat.createdAt || ""} ${chat.updatedAt || ""}`,
+      chatId: chat.id,
+    }));
+
+    const messageEntries = chats.flatMap((chat) =>
+      (messagesByChat[chat.id] || []).map((message) => ({
+        type: "message",
+        id: `global-message-${chat.id}-${message.id}`,
+        title: chat.title || t("new_chat"),
+        subtitle: `${t("search_category_messages")} · ${message.role}`,
+        body: message.content || "",
+        searchText: `${chat.title || ""} ${message.role || ""} ${message.content || ""}`,
+        chatId: chat.id,
+        chatTitle: chat.title,
+        message,
+      }))
+    );
+
+    const fileEntries = files.map((file) => ({
+      type: "file",
+      id: `global-file-${file.id}`,
+      title: file.filename || file.name || t("files"),
+      subtitle: `${t("search_category_files")} · ${file.status || ""}`,
+      body: [file.mime_type, file.ext, file.status, file.chunks ? `${file.chunks} ${t("chunks_label")}` : ""].filter(Boolean).join(" · "),
+      searchText: `${file.filename || ""} ${file.name || ""} ${file.mime_type || ""} ${file.ext || ""} ${file.status || ""}`,
+      fileId: file.id,
+    }));
+
+    const memoryEntries = memoryFacts.map((fact) => ({
+      type: "memory",
+      id: `global-memory-${fact.key}`,
+      title: fact.key || t("memory_title"),
+      subtitle: t("search_category_memory"),
+      body: fact.value || "",
+      searchText: `${fact.key || ""} ${fact.value || ""}`,
+    }));
+
+    const workspaceEntries = workspaces.map((workspace) => ({
+      type: "workspace",
+      id: `global-workspace-${workspace.id}`,
+      title: workspace.name || t("workspaces"),
+      subtitle: t("search_category_workspaces"),
+      body: workspace.description || "",
+      searchText: `${workspace.name || ""} ${workspace.description || ""}`,
+      workspaceId: workspace.id,
+    }));
+
+    return [...chatEntries, ...messageEntries, ...fileEntries, ...memoryEntries, ...workspaceEntries];
+  }, [chats, messagesByChat, files, memoryFacts, workspaces, t]);
+
+  const results = useMemo(() => {
+    if (!terms.length) return [];
+    return entries
+      .map((entry) => ({ ...entry, score: scoreSearchEntry(entry, terms) }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score);
+  }, [entries, query]);
+  const visibleResults = useMemo(() => {
+    if (mode === "all") return results;
+    return results.filter((entry) => entry.type === "chat" || entry.type === "message");
+  }, [results, mode]);
+
+  const jump = async (result) => {
+    setOpen(false);
+
+    if (result.type === "message") {
+      selectChat(result.chatId);
+      await loadMessages(result.chatId, true).catch(() => {});
+      setTimeout(() => {
+        const node = document.querySelector(`[data-message-id="${result.message.id}"]`);
+        if (!node) return;
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.animate([
+          { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+          { boxShadow: "0 0 0 8px rgba(99,102,241,0.12)" },
+          { boxShadow: "0 0 0 0 rgba(99,102,241,0)" },
+        ], { duration: 1200, easing: "ease-out" });
+      }, 120);
+      return;
+    }
+
+    if (result.type === "chat") selectChat(result.chatId);
+    if (result.type === "file") navigate("files");
+    if (result.type === "memory") navigate("memory");
+    if (result.type === "workspace") navigate("workspaces", { wsId: result.workspaceId });
+  };
+
+  return React.createElement("div", { className: floating ? "global-search-floating" : "", style: { position: "relative" } },
+    React.createElement("button", {
+      className: "btn-primary",
+      onClick: () => setOpen((value) => !value),
+      style: {
+        width: "auto",
+        padding: "10px 16px",
+        borderRadius: 12,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        whiteSpace: "nowrap",
+      },
+    },
+      React.createElement(IconSearch),
+      React.createElement("span", null, t("search_button"))
+    ),
+    open && React.createElement(ChatSearchPopover, {
+      query,
+      setQuery,
+      mode,
+      setMode,
+      rankedResults: visibleResults,
+      terms,
+      currentChatId: activeChatId,
+      onJump: jump,
+    })
+  );
+}
+
+function SearchCard({ result, terms, currentChatId, onJump }) {
+  const { t } = useLang();
+  const body = result.type === "message" ? result.message.content : (result.body || result.searchText || "");
+  const isOtherChat = result.chatId !== currentChatId;
+  const typeLabels = {
+    message: t("search_category_messages"),
+    chat: t("search_category_chats"),
+    file: t("search_category_files"),
+    memory: t("search_category_memory"),
+    workspace: t("search_category_workspaces"),
+  };
   return React.createElement("button", {
-    onClick: () => onJump(message),
+    onClick: () => onJump(result),
     style: {
       width: "100%",
       textAlign: "left",
@@ -431,19 +751,49 @@ function SearchCard({ message, terms, onJump }) {
   },
     React.createElement("div", {
       style: {
-        fontSize: 11,
-        color: "var(--muted)",
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 10,
+        alignItems: "center",
         marginBottom: 6,
-        textTransform: "uppercase",
-        letterSpacing: ".04em",
       },
-    }, message.role),
+    },
+      React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: "var(--muted)",
+          textTransform: "uppercase",
+          letterSpacing: ".04em",
+        },
+      }, typeLabels[result.type] || result.type),
+      React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: result.type === "message" && isOtherChat ? "var(--accent)" : "var(--muted)",
+          fontWeight: result.type === "message" && isOtherChat ? 700 : 600,
+          maxWidth: 190,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        },
+      }, result.subtitle || result.chatTitle || "")
+    ),
+    React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 800,
+        marginBottom: body ? 4 : 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      },
+    }, result.title || ""),
     React.createElement("div", {
       style: {
         fontSize: 13,
         lineHeight: 1.55,
       },
-      dangerouslySetInnerHTML: { __html: highlightText(formatSnippet(message.content, terms), terms) },
+      dangerouslySetInnerHTML: { __html: highlightText(formatSnippet(body, terms), terms) },
     })
   );
 }
@@ -513,12 +863,41 @@ function Message({ msg, highlighted }) {
             className: "msg-text msg-text--user",
             dangerouslySetInnerHTML: { __html: rendered },
           }),
+      isAI && msg.sources?.length > 0 && React.createElement(SourcePanel, { sources: msg.sources }),
       React.createElement("div", { className: "msg-actions" },
         React.createElement("button", { className: "msg-action", onClick: copy },
           copied ? React.createElement(IconCheck) : React.createElement(IconCopy),
           React.createElement("span", null, copied ? t("copied") : t("copy"))
         )
       )
+    )
+  );
+}
+
+function SourcePanel({ sources }) {
+  const { t } = useLang();
+  return React.createElement("div", { className: "source-panel" },
+    React.createElement("div", { className: "source-panel-title" },
+      React.createElement(IconFile, { width: 14, height: 14 }),
+      React.createElement("span", null, t("sources")),
+      React.createElement("span", { className: "source-count" }, sources.length)
+    ),
+    React.createElement("div", { className: "source-list" },
+      sources.slice(0, 5).map((source) => React.createElement("div", {
+        key: `${source.document_id || "doc"}-${source.chunk_index || source.source_id}`,
+        className: "source-card",
+      },
+        React.createElement("div", { className: "source-card-head" },
+          React.createElement("span", { className: "source-file" }, source.filename || "Document"),
+          React.createElement("span", { className: "source-meta" },
+            `${t("source_chunk")} ${Number.isFinite(source.chunk_index) ? source.chunk_index + 1 : source.source_id || ""}`
+          )
+        ),
+        source.score != null && React.createElement("div", { className: "source-score" },
+          `${Math.round(source.score * 100)}% ${t("source_relevance")}`
+        ),
+        React.createElement("div", { className: "source-snippet" }, source.snippet || "")
+      ))
     )
   );
 }
@@ -538,4 +917,4 @@ function ThinkingRow() {
   );
 }
 
-Object.assign(window, { ChatView });
+Object.assign(window, { ChatView, UniversalSearch });
