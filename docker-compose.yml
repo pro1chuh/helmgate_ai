@@ -9,7 +9,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U helm"]
+      test: ["CMD-SHELL", "pg_isready -U helm -d helm && psql -U helm -d helm -c 'SELECT 1' >/dev/null"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -46,12 +46,12 @@ services:
       - "8000:8000"
 
   frontend:
-    build: ./frontend
+    build: ./frontend-demo
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "3002:3000"
 
 volumes:
   postgres_data:

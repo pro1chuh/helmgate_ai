@@ -532,7 +532,7 @@ async def send_message(
             try:
                 async with asyncio.timeout(120):
                     image_url = await llm_client.generate_image(route_result, body.content)
-                full_response.append(image_url)
+                full_response.append(f"![generated image]({image_url})")
                 yield f"data: {json.dumps({'type': 'image', 'url': image_url}, ensure_ascii=False)}\n\n"
             except TimeoutError:
                 llm_error = "Превышено время генерации изображения (120 сек)"

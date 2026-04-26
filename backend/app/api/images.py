@@ -2,7 +2,7 @@
 Генерация изображений.
 
 POST /api/images/generate — принимает промпт, возвращает URL изображения.
-Модель по умолчанию: MODEL_IMAGE_GEN из настроек (gemini-2.5-flash-image).
+Модель по умолчанию: MODEL_IMAGE_GEN из настроек (gemini-3.1-flash-image-preview).
 Можно переопределить через поле model в теле запроса.
 """
 import logging

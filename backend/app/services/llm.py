@@ -10,6 +10,7 @@ import asyncio
 import httpx
 import json
 import logging
+import re
 import time
 from typing import AsyncIterator
 from app.core.router import RouteResult, TaskType
@@ -242,6 +243,48 @@ class LLMClient:
             response.raise_for_status()
             return response.json()["text"]
 
+    @staticmethod
+    def _extract_image_url_from_chat_response(data: dict) -> str:
+        """Extract an image URL/data URI from OpenAI-compatible chat responses."""
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("Image response has no choices")
+
+        message = choices[0].get("message") or {}
+
+        for image in message.get("images") or []:
+            image_url = image.get("image_url") or image.get("url")
+            url = image_url.get("url") if isinstance(image_url, dict) else image_url
+            if url:
+                return url
+
+        content = message.get("content") or ""
+        content_parts = content if isinstance(content, list) else [{"text": str(content)}]
+
+        for part in content_parts:
+            if not isinstance(part, dict):
+                continue
+
+            image_url = part.get("image_url") or part.get("url")
+            url = image_url.get("url") if isinstance(image_url, dict) else image_url
+            if url:
+                return url
+
+            text = str(part.get("text") or part.get("content") or "")
+            data_uri = re.search(r"data:image/[^;\s]+;base64,[A-Za-z0-9+/=\r\n]+", text)
+            if data_uri:
+                return data_uri.group(0).replace("\n", "").replace("\r", "")
+
+            markdown_url = re.search(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", text)
+            if markdown_url:
+                return markdown_url.group(1)
+
+            plain_url = re.search(r"https?://\S+", text)
+            if plain_url:
+                return plain_url.group(0).rstrip(").,")
+
+        raise ValueError(f"Unexpected image response format: {list(message.keys())}")
+
     async def generate_image(self, route: RouteResult, prompt: str) -> str:
         """
         Генерация изображения через /images/generations.
@@ -250,23 +293,21 @@ class LLMClient:
         """
         payload = {
             "model": route.model,
-            "prompt": prompt,
-            "n": 1,
-            "size": "1024x1024",
-            "response_format": "url",
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
         }
         provider = route.base_url.split("//")[-1].split("/")[0]
         t0 = time.monotonic()
 
         try:
             response = await self._client.post(
-                f"{route.base_url}/images/generations",
+                f"{route.base_url}/chat/completions",
                 headers=self._headers(route.api_key),
                 json=payload,
                 timeout=180.0,
             )
             response.raise_for_status()
-            data = response.json()["data"][0]
+            data = response.json()
 
             llm_requests_total.labels(
                 provider=provider, model=route.model,
@@ -277,11 +318,7 @@ class LLMClient:
             ).observe(time.monotonic() - t0)
 
             # Провайдер может вернуть url или b64_json
-            if "url" in data:
-                return data["url"]
-            if "b64_json" in data:
-                return f"data:image/png;base64,{data['b64_json']}"
-            raise ValueError(f"Unexpected image response format: {list(data.keys())}")
+            return self._extract_image_url_from_chat_response(data)
 
         except Exception:
             llm_requests_total.labels(

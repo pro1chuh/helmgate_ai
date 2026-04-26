@@ -10,7 +10,7 @@ ASR — через Groq (единственный провайдер с audio en
   REASONING → gemini-2.5-pro
   VISION    → grok-4.20 (vision)
   ASR       → Groq Whisper
-  IMAGE_GEN → gemini-2.5-flash-image
+  IMAGE_GEN → gemini-3.1-flash-image-preview
   RAG       → llama-3.3-70b (с контекстом документа)
 """
 from enum import Enum

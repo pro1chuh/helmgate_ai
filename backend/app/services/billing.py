@@ -7,7 +7,7 @@
   kat-coder-pro-v2:        вход 29₽,  выход 118₽
   gemini-2.5-pro:          вход 123₽, выход 988₽
   grok-4.20:               вход 197₽, выход 593₽
-  gemini-2.5-flash-image:  вход 29₽,  выход 247₽
+  gemini-3.1-flash-image-preview:  вход 29₽,  выход 247₽
 """
 import logging
 import httpx
@@ -27,7 +27,7 @@ _PRICING: dict[str, tuple[Decimal, Decimal]] = {
     "kwaipilot/kat-coder-pro-v2":              (Decimal("29") / 1_000_000,  Decimal("118") / 1_000_000),
     "google/gemini-2.5-pro":                   (Decimal("123") / 1_000_000, Decimal("988") / 1_000_000),
     "x-ai/grok-4.20":                          (Decimal("197") / 1_000_000, Decimal("593") / 1_000_000),
-    "google/gemini-2.5-flash-image":           (Decimal("29") / 1_000_000,  Decimal("247") / 1_000_000),
+    "google/gemini-3.1-flash-image-preview":   (Decimal("29") / 1_000_000,  Decimal("247") / 1_000_000),
 }
 
 # Дефолтная цена для неизвестных моделей — берём среднюю (llama)

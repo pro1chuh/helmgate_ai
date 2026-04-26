@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     MODEL_VISION: str = "x-ai/grok-4.20"
 
     # Image generation
-    MODEL_IMAGE_GEN: str = "google/gemini-2.5-flash-image"
+    MODEL_IMAGE_GEN: str = "google/gemini-3.1-flash-image-preview"
 
     # ASR — через Groq
     MODEL_ASR: str = "whisper-large-v3-turbo"
