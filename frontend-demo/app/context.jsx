@@ -89,8 +89,8 @@ const T = {
     delete: "Удалить",
     search_chat: "Поиск по чату",
     search_button: "Поиск",
-    search_scope_chats: "По чатам",
-    search_scope_all: "По всему",
+    search_scope_chats: "Чаты и сообщения",
+    search_scope_all: "Везде",
     universal_search: "Глобальный поиск",
     universal_search_hint: "Чаты, сообщения, файлы, память и воркспейсы",
     universal_search_placeholder: "Поиск по всему Helm...",
@@ -225,8 +225,8 @@ const T = {
     delete: "Delete",
     search_chat: "Search chat",
     search_button: "Search",
-    search_scope_chats: "Chats",
-    search_scope_all: "Everything",
+    search_scope_chats: "Chats & messages",
+    search_scope_all: "Everywhere",
     universal_search: "Universal search",
     universal_search_hint: "Chats, messages, files, memory, and workspaces",
     universal_search_placeholder: "Search across Helm...",
@@ -432,19 +432,31 @@ function AppProvider({ children }) {
     ...chat,
     tag: chat.tag || null,
     archived: Boolean(chat.archived),
+    deletedAt: chat.deleted_at || chat.deletedAt || null,
     createdAt: chat.created_at || chat.createdAt || new Date().toISOString(),
     updatedAt: chat.updated_at || chat.updatedAt || new Date().toISOString(),
   }), []);
 
-  const normalizeMessage = useCallback((message) => ({
-    id: message.id,
-    role: message.role,
-    content: message.content || "",
-    model: message.model_used || message.model || null,
-    taskType: message.task_type || message.taskType || "text",
-    sources: Array.isArray(message.sources) ? message.sources : [],
-    ts: message.created_at || message.ts || new Date().toISOString(),
-  }), []);
+  const normalizeMessage = useCallback((message) => {
+    const taskType = message.task_type || message.taskType || "text";
+    const modelUsed = message.model_used || message.model || null;
+    const content = String(message.content || "").trim();
+    const isImageUrl = /^(https?:\/\/\S+|data:image\/\S+)$/i.test(content);
+    const isGeneratedImage =
+      taskType === "image_gen" ||
+      /image/i.test(String(modelUsed || "")) ||
+      /^data:image\//i.test(content);
+
+    return {
+      id: message.id,
+      role: message.role,
+      content: isGeneratedImage && isImageUrl ? `![generated image](${content})` : (message.content || ""),
+      model: modelUsed,
+      taskType,
+      sources: Array.isArray(message.sources) ? message.sources : [],
+      ts: message.created_at || message.ts || new Date().toISOString(),
+    };
+  }, []);
 
   const loadProfile = useCallback(async (tokenOverride) => {
     const profile = await apiFetch("/profile", {}, tokenOverride);
@@ -461,8 +473,8 @@ function AppProvider({ children }) {
       total_requests: items.length,
     }));
     if (!activeChatId && items.length > 0) {
-      const firstActive = items.find((chat) => !chat.archived) || items[0];
-      setActiveChatId(firstActive.id);
+      const firstActive = items.find((chat) => !chat.archived && !chat.deletedAt) || items.find((chat) => !chat.deletedAt);
+      setActiveChatId(firstActive?.id || null);
     }
     return items;
   }, [activeChatId, normalizeChat]);
@@ -743,19 +755,33 @@ function AppProvider({ children }) {
     await loadMessages(chatId, true);
   }, [loadMessages]);
 
-  const deleteChat = useCallback(async (chatId) => {
-    await apiFetch(`/chats/${chatId}`, { method: "DELETE" });
-    const remainingChats = chats.filter((chat) => chat.id !== chatId);
-    setChats(remainingChats);
-    setMessagesByChat((prev) => {
-      const next = { ...prev };
-      delete next[chatId];
+  const deleteChat = useCallback(async (chatId, opts = {}) => {
+    await apiFetch(`/chats/${chatId}${opts.permanent ? "?permanent=true" : ""}`, { method: "DELETE" });
+    if (opts.permanent) {
+      setChats((prev) => {
+        const remainingChats = prev.filter((chat) => chat.id !== chatId);
+        if (activeChatId === chatId) {
+          setActiveChatId(remainingChats.find((chat) => !chat.deletedAt)?.id || null);
+        }
+        return remainingChats;
+      });
+      setMessagesByChat((prev) => {
+        const next = { ...prev };
+        delete next[chatId];
+        return next;
+      });
+      return;
+    }
+    const deletedAt = new Date().toISOString();
+    setChats((prev) => {
+      const next = prev.map((chat) => chat.id === chatId ? { ...chat, archived: false, deletedAt } : chat);
+      if (activeChatId === chatId) {
+        const nextActive = next.find((chat) => chat.id !== chatId && !chat.deletedAt && !chat.archived);
+        setActiveChatId(nextActive?.id || null);
+      }
       return next;
     });
-    if (activeChatId === chatId) {
-      setActiveChatId(remainingChats.length ? remainingChats[0].id : null);
-    }
-  }, [activeChatId, chats]);
+  }, [activeChatId]);
 
   const updateChatTag = useCallback(async (chatId, tag) => {
     const payload = await apiFetch(`/chats/${chatId}`, {
@@ -780,6 +806,16 @@ function AppProvider({ children }) {
     }
     return updated;
   }, [activeChatId, chats, normalizeChat]);
+
+  const restoreChat = useCallback(async (chatId) => {
+    const payload = await apiFetch(`/chats/${chatId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ deleted: false, archived: false }),
+    });
+    const updated = normalizeChat(payload);
+    setChats((prev) => prev.map((chat) => chat.id === chatId ? updated : chat));
+    return updated;
+  }, [normalizeChat]);
 
   const uploadFiles = useCallback(async (selectedFiles) => {
     const uploaded = [];
@@ -887,6 +923,7 @@ function AppProvider({ children }) {
         deleteChat,
         updateChatTag,
         updateChatArchive,
+        restoreChat,
         files,
         uploadFiles,
         deleteFile,

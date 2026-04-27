@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # ASR — через Groq
     MODEL_ASR: str = "whisper-large-v3-turbo"
 
+    # Embeddings for RAG / document search
+    MODEL_EMBEDDING: str = "openai/text-embedding-3-small"
+
     # Классификатор запросов (маленькая быстрая модель)
     MODEL_ROUTER: str = "google/gemma-3-4b-it"
 

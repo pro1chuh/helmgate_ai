@@ -178,4 +178,4 @@ def route(
 def get_embedding_config() -> tuple[str, str, str]:
     """Возвращает (base_url, api_key, model) для embedding-модели."""
     # Embeddings через OpenRouter (модели типа text-embedding-3-small)
-    return settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, "openai/text-embedding-3-small"
+    return settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, settings.MODEL_EMBEDDING

@@ -95,6 +95,10 @@ function highlightText(text, terms) {
 function formatSnippet(text, terms) {
   const content = String(text || "");
   if (!content) return "";
+  const imageMarkdown = content.match(/!\[[^\]]*\]\(([^)]+)\)/);
+  if (imageMarkdown) return "Generated image";
+  if (/^(https?:\/\/\S+|data:image\/\S+)$/i.test(content.trim())) return "Generated image";
+
   const lower = content.toLowerCase();
   const matchIndex = terms.reduce((best, term) => {
     const idx = lower.indexOf(term.toLowerCase());
@@ -112,10 +116,10 @@ function formatSnippet(text, terms) {
 
 function ChatView() {
   const { t, lang } = useLang();
-  const { activeChat, activeChatId, activeMessages, chats, files, workspaces, memoryFacts, messagesByChat, loadMessages, selectChat, navigate, sendMessage, thinking, refreshChat } = useApp();
+  const { activeChat, activeChatId, activeMessages, chats, files, workspaces, messagesByChat, loadMessages, selectChat, navigate, sendMessage, thinking, refreshChat } = useApp();
   const [input, setInput] = useState("");
   const [selectedFileId, setSelectedFileId] = useState("");
-  const [memoryMode, setMemoryMode] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState("chats");
@@ -127,7 +131,8 @@ function ChatView() {
   const messages = activeMessages || [];
   const terms = extractTerms(searchQuery);
   const searchableEntries = useMemo(() => {
-    const chatEntries = chats.map((chat) => ({
+    const visibleChats = chats.filter((chat) => !chat.deletedAt);
+    const chatEntries = visibleChats.map((chat) => ({
       type: "chat",
       id: `chat-${chat.id}`,
       title: chat.title || t("new_chat"),
@@ -136,7 +141,7 @@ function ChatView() {
       chatId: chat.id,
     }));
 
-    const messageEntries = chats.flatMap((chat) =>
+    const messageEntries = visibleChats.flatMap((chat) =>
       (messagesByChat[chat.id] || []).map((message) => ({
         type: "message",
         id: `message-${chat.id}-${message.id}`,
@@ -160,16 +165,6 @@ function ChatView() {
       fileId: file.id,
     }));
 
-    const memoryEntries = memoryFacts.map((fact) => ({
-      type: "memory",
-      id: `memory-${fact.key}`,
-      title: fact.key || t("memory_title"),
-      subtitle: t("search_category_memory"),
-      body: fact.value || "",
-      searchText: `${fact.key || ""} ${fact.value || ""}`,
-      memoryKey: fact.key,
-    }));
-
     const workspaceEntries = workspaces.map((workspace) => ({
       type: "workspace",
       id: `workspace-${workspace.id}`,
@@ -184,10 +179,9 @@ function ChatView() {
       ...chatEntries,
       ...messageEntries,
       ...fileEntries,
-      ...memoryEntries,
       ...workspaceEntries,
     ];
-  }, [chats, messagesByChat, files, memoryFacts, workspaces, t]);
+  }, [chats, messagesByChat, files, workspaces, t]);
   const rankedResults = useMemo(() => {
     if (!terms.length) return [];
     return searchableEntries
@@ -207,8 +201,18 @@ function ChatView() {
   }, [messages.length, thinking]);
 
   useEffect(() => {
-    if (!searchOpen || chats.length === 0) return;
-    Promise.all(chats.map((chat) => loadMessages(chat.id).catch(() => []))).catch(() => {});
+    if (!previewImage) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setPreviewImage(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewImage]);
+
+  useEffect(() => {
+    const visibleChats = chats.filter((chat) => !chat.deletedAt);
+    if (!searchOpen || visibleChats.length === 0) return;
+    Promise.all(visibleChats.map((chat) => loadMessages(chat.id).catch(() => []))).catch(() => {});
   }, [searchOpen, chats, loadMessages]);
 
   useEffect(() => {
@@ -265,11 +269,6 @@ function ChatView() {
       return;
     }
 
-    if (result.type === "memory") {
-      navigate("memory");
-      return;
-    }
-
     if (result.type === "workspace") {
       navigate("workspaces", { wsId: result.workspaceId });
     }
@@ -279,7 +278,6 @@ function ChatView() {
     const content = input.trim();
     if (!content || thinking) return;
     setInput("");
-    setMemoryMode(false);
     if (textRef.current) textRef.current.style.height = "auto";
     await sendMessage({
       content,
@@ -367,25 +365,13 @@ function ChatView() {
               key: message.id,
               msg: message,
               highlighted: highlight?.messageId === message.id ? highlight.terms : [],
+              onImageOpen: setPreviewImage,
             })),
             thinking && React.createElement(ThinkingRow)
           )
     ),
     React.createElement("div", { className: "chat-input-area" },
       React.createElement("div", { className: "chat-input-card" },
-        React.createElement("div", { className: "chat-input-top" },
-          React.createElement("button", {
-            type: "button",
-            className: `memory-chip ${memoryMode ? "active" : ""}`,
-            onClick: () => setMemoryMode((value) => !value),
-            title: memoryMode
-              ? (t("memory") + " on")
-              : (t("memory") + " off"),
-          },
-            React.createElement(IconBrain),
-            React.createElement("span", null, t("memory"))
-          )
-        ),
         React.createElement("textarea", {
           ref: textRef,
           className: "chat-ta",
@@ -448,18 +434,24 @@ function ChatView() {
           )
         )
       )
-    )
+    ),
+    previewImage && React.createElement(ImageLightbox, {
+      src: previewImage,
+      alt: "Generated image",
+      onClose: () => setPreviewImage(null),
+    })
   );
 }
 
 function ChatSearchPopover({ query, setQuery, mode, setMode, rankedResults, terms, currentChatId, onJump }) {
   const { t } = useLang();
   const bestMatch = rankedResults[0] || null;
+  const chatCount = rankedResults.filter((entry) => entry.type === "chat" || entry.type === "message").length;
+  const extraCount = rankedResults.filter((entry) => entry.type === "file" || entry.type === "workspace").length;
   const groups = [
     ["message", t("search_category_messages")],
     ["chat", t("search_category_chats")],
     ["file", t("search_category_files")],
-    ["memory", t("search_category_memory")],
     ["workspace", t("search_category_workspaces")],
   ].map(([type, label]) => ({
     type,
@@ -520,27 +512,56 @@ function ChatSearchPopover({ query, setQuery, mode, setMode, rankedResults, term
         type: "button",
         onClick: () => setMode("chats"),
         style: {
-          height: 36,
+          minHeight: 42,
+          padding: "6px 10px",
           borderRadius: 10,
           border: mode === "chats" ? "1px solid var(--accent)" : "1px solid var(--border)",
           background: mode === "chats" ? "rgba(99,102,241,.12)" : "var(--surface2)",
           color: mode === "chats" ? "var(--accent)" : "var(--text2)",
           fontWeight: 800,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          lineHeight: 1.2,
         },
-      }, t("search_scope_chats")),
+      },
+        React.createElement("span", null, t("search_scope_chats")),
+        query && React.createElement("small", { style: { color: "var(--muted)", fontWeight: 700 } }, chatCount)
+      ),
       React.createElement("button", {
         type: "button",
         onClick: () => setMode("all"),
         style: {
-          height: 36,
+          minHeight: 42,
+          padding: "6px 10px",
           borderRadius: 10,
           border: mode === "all" ? "1px solid var(--accent)" : "1px solid var(--border)",
           background: mode === "all" ? "rgba(99,102,241,.12)" : "var(--surface2)",
           color: mode === "all" ? "var(--accent)" : "var(--text2)",
           fontWeight: 800,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          lineHeight: 1.2,
         },
-      }, t("search_scope_all"))
+      },
+        React.createElement("span", null, t("search_scope_all")),
+        query && React.createElement("small", { style: { color: "var(--muted)", fontWeight: 700 } }, `${chatCount + extraCount} / +${extraCount}`)
+      )
     ),
+    query && mode === "all" && extraCount === 0 && rankedResults.length > 0 && React.createElement("div", {
+      style: {
+        marginTop: 10,
+        padding: "9px 11px",
+        borderRadius: 10,
+        background: "var(--surface2)",
+        color: "var(--muted)",
+        fontSize: 12,
+        lineHeight: 1.45,
+      },
+    }, "В файлах и воркспейсах совпадений нет, поэтому видны только чаты и сообщения."),
     bestMatch && React.createElement("div", { style: { marginTop: 14 } },
       React.createElement("div", {
         style: {
@@ -591,7 +612,7 @@ function ChatSearchPopover({ query, setQuery, mode, setMode, rankedResults, term
 
 function UniversalSearch({ floating = false }) {
   const { t } = useLang();
-  const { activeChatId, chats, files, workspaces, memoryFacts, messagesByChat, loadMessages, selectChat, navigate } = useApp();
+  const { activeChatId, chats, files, workspaces, messagesByChat, loadMessages, selectChat, navigate } = useApp();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("chats");
@@ -636,15 +657,6 @@ function UniversalSearch({ floating = false }) {
       fileId: file.id,
     }));
 
-    const memoryEntries = memoryFacts.map((fact) => ({
-      type: "memory",
-      id: `global-memory-${fact.key}`,
-      title: fact.key || t("memory_title"),
-      subtitle: t("search_category_memory"),
-      body: fact.value || "",
-      searchText: `${fact.key || ""} ${fact.value || ""}`,
-    }));
-
     const workspaceEntries = workspaces.map((workspace) => ({
       type: "workspace",
       id: `global-workspace-${workspace.id}`,
@@ -655,8 +667,8 @@ function UniversalSearch({ floating = false }) {
       workspaceId: workspace.id,
     }));
 
-    return [...chatEntries, ...messageEntries, ...fileEntries, ...memoryEntries, ...workspaceEntries];
-  }, [chats, messagesByChat, files, memoryFacts, workspaces, t]);
+    return [...chatEntries, ...messageEntries, ...fileEntries, ...workspaceEntries];
+  }, [chats, messagesByChat, files, workspaces, t]);
 
   const results = useMemo(() => {
     if (!terms.length) return [];
@@ -691,7 +703,6 @@ function UniversalSearch({ floating = false }) {
 
     if (result.type === "chat") selectChat(result.chatId);
     if (result.type === "file") navigate("files");
-    if (result.type === "memory") navigate("memory");
     if (result.type === "workspace") navigate("workspaces", { wsId: result.workspaceId });
   };
 
@@ -733,10 +744,10 @@ function SearchCard({ result, terms, currentChatId, onJump }) {
     message: t("search_category_messages"),
     chat: t("search_category_chats"),
     file: t("search_category_files"),
-    memory: t("search_category_memory"),
     workspace: t("search_category_workspaces"),
   };
   return React.createElement("button", {
+    className: "search-card",
     onClick: () => onJump(result),
     style: {
       width: "100%",
@@ -792,6 +803,8 @@ function SearchCard({ result, terms, currentChatId, onJump }) {
       style: {
         fontSize: 13,
         lineHeight: 1.55,
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
       },
       dangerouslySetInnerHTML: { __html: highlightText(formatSnippet(body, terms), terms) },
     })
@@ -814,7 +827,7 @@ function EmptyState({ suggestions, onSelect }) {
   );
 }
 
-function Message({ msg, highlighted }) {
+function Message({ msg, highlighted, onImageOpen }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
   const isAI = msg.role === "assistant";
@@ -840,6 +853,12 @@ function Message({ msg, highlighted }) {
       )
     : rendered;
 
+  const openImage = (event) => {
+    if (event.target?.tagName !== "IMG") return;
+    event.preventDefault();
+    onImageOpen?.(event.target.currentSrc || event.target.src);
+  };
+
   return React.createElement("div", {
     className: `msg msg--${msg.role}`,
     "data-message-id": msg.id,
@@ -857,6 +876,7 @@ function Message({ msg, highlighted }) {
       isAI
         ? React.createElement("div", {
             className: "msg-text msg-text--ai markdown-body",
+            onClick: openImage,
             dangerouslySetInnerHTML: { __html: highlightedHtml },
           })
         : React.createElement("div", {
@@ -871,6 +891,29 @@ function Message({ msg, highlighted }) {
         )
       )
     )
+  );
+}
+
+function ImageLightbox({ src, alt, onClose }) {
+  return React.createElement("div", {
+    className: "image-lightbox",
+    role: "dialog",
+    "aria-modal": "true",
+    onClick: onClose,
+  },
+    React.createElement("button", {
+      className: "image-lightbox-close",
+      type: "button",
+      title: "Close",
+      "aria-label": "Close image preview",
+      onClick: onClose,
+    }, React.createElement(IconX)),
+    React.createElement("img", {
+      src,
+      alt,
+      className: "image-lightbox-img",
+      onClick: (event) => event.stopPropagation(),
+    })
   );
 }
 
